@@ -345,6 +345,7 @@ class ToolsConfig(Base):
     exec: ExecToolConfig = Field(default_factory=ExecToolConfig)
     restrict_to_workspace: bool = False  # If true, restrict all tool access to workspace directory
     mcp_servers: dict[str, MCPServerConfig] = Field(default_factory=dict)
+    enabled: list[str] | None = None  # If set, only these tools will be loaded (None = all enabled)
 
 
 class Config(BaseSettings):
