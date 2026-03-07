@@ -337,6 +337,7 @@ class TranscriptionConfig(Base):
     model: str = "whisper-large-v3"
     api_key: str = ""
     api_base: str | None = None
+    preload: bool = False
 
 
 class Config(BaseSettings):

@@ -178,6 +178,10 @@ class TelegramChannel(BaseChannel):
         self._media_group_buffers: dict[str, dict] = {}
         self._media_group_tasks: dict[str, asyncio.Task] = {}
 
+        # Eagerly instantiate transcriber to allow preloading (if enabled)
+        from nanobot.providers.transcription import get_transcription_provider
+        self._transcriber = get_transcription_provider(self.transcription_config)
+
     async def start(self) -> None:
         """Start the Telegram bot with long polling."""
         if not self.config.token:
@@ -185,6 +189,10 @@ class TelegramChannel(BaseChannel):
             return
 
         self._running = True
+
+        # Trigger transcription warmup (e.g. for MLX models)
+        if self._transcriber:
+            await self._transcriber.preload()
 
         # Build the application with larger connection pool to avoid pool-timeout on long runs
         req = HTTPXRequest(connection_pool_size=16, pool_timeout=5.0, connect_timeout=30.0, read_timeout=30.0)
@@ -459,12 +467,9 @@ class TelegramChannel(BaseChannel):
 
                 # Handle voice transcription
                 if media_type == "voice" or media_type == "audio":
-                    from nanobot.providers.transcription import get_transcription_provider
-                    transcriber = get_transcription_provider(self.transcription_config)
-                    
                     transcription = None
-                    if transcriber:
-                        transcription = await transcriber.transcribe(file_path)
+                    if self._transcriber:
+                        transcription = await self._transcriber.transcribe(file_path)
                         
                     if transcription:
                         logger.info("Transcribed {}: {}...", media_type, transcription[:50])
