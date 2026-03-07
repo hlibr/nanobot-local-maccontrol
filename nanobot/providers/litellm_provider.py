@@ -60,6 +60,20 @@ class LiteLLMProvider(LLMProvider):
         litellm.suppress_debug_info = True
         # Drop unsupported parameters for providers (e.g., gpt-5 rejects some params)
         litellm.drop_params = True
+        self._vision_cache: dict[str, bool] = {}
+
+    def supports_vision(self, model: str | None = None) -> bool:
+        """Check if model supports images using LiteLLM's detection."""
+        m = self._resolve_model(model or self.default_model)
+        if m in self._vision_cache:
+            return self._vision_cache[m]
+        
+        try:
+            res = litellm.supports_vision(m)
+            self._vision_cache[m] = res
+            return res
+        except Exception:
+            return False
 
     def _setup_env(self, api_key: str, api_base: str | None, model: str) -> None:
         """Set environment variables based on detected provider."""
@@ -251,6 +265,9 @@ class LiteLLMProvider(LLMProvider):
             # Check if this looks like a vision-unsupported error (e.g. OpenRouter 404 or OpenAI 400)
             err_str = str(e).lower()
             if any(kw in err_str for kw in ("image input", "multimodal", "image_url", "vision")):
+                # Mark as unsupported in cache for this session
+                self._vision_cache[model] = False
+                
                 # Check if we actually have images to strip
                 stripped_messages = self._strip_vision_content(kwargs["messages"])
                 if stripped_messages != kwargs["messages"]:

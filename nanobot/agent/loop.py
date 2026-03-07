@@ -463,7 +463,8 @@ class AgentLoop:
                     messages = await self.context.add_user_message(
                         messages,
                         f"I have attached the images/screenshots from the tool results: {tags}",
-                        media=images_to_inject
+                        media=images_to_inject,
+                        vision_supported=self.provider.supports_vision(model=self.model),
                     )
             else:
                 clean = self._strip_think(response.content)
@@ -615,6 +616,7 @@ class AgentLoop:
                 current_message=msg.content,
                 channel=channel,
                 chat_id=chat_id,
+                vision_supported=self.provider.supports_vision(model=self.model),
             )
             final_content, _, all_msgs = await self._run_agent_loop(messages)
             self._save_turn(session, all_msgs, 1 + len(history))
@@ -740,6 +742,7 @@ class AgentLoop:
             media=msg.media if msg.media else None,
             channel=msg.channel,
             chat_id=msg.chat_id,
+            vision_supported=self.provider.supports_vision(model=self.model),
         )
 
         async def _bus_progress(content: str, *, tool_hint: bool = False) -> None:

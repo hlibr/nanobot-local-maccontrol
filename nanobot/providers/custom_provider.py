@@ -24,6 +24,11 @@ class CustomProvider(LLMProvider):
             base_url=api_base,
             default_headers={"x-session-affinity": uuid.uuid4().hex},
         )
+        self._vision_failed = False
+
+    def supports_vision(self, model: str | None = None) -> bool:
+        """Assume support unless we've seen a vision-related error."""
+        return not self._vision_failed
 
     def _resolve_model(self, model: str) -> str:
         """Strip provider prefix if present (e.g. custom/model -> model)."""
@@ -57,6 +62,7 @@ class CustomProvider(LLMProvider):
             # Check for vision-unsupported errors
             err_str = str(e).lower()
             if any(kw in err_str for kw in ("image input", "multimodal", "image_url", "vision")):
+                self._vision_failed = True
                 stripped_messages = self._strip_vision_content(kwargs["messages"])
                 if stripped_messages != kwargs["messages"]:
                     from loguru import logger

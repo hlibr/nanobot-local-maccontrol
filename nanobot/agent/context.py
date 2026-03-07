@@ -39,6 +39,7 @@ class ContextBuilder:
         media: list[str] | None = None,
         channel: str | None = None,
         chat_id: str | None = None,
+        vision_supported: bool = True,
     ) -> list[dict[str, Any]]:
         """Build the complete message list for an LLM call."""
         runtime_ctx = self._build_runtime_context(channel, chat_id)
@@ -52,7 +53,7 @@ class ContextBuilder:
             # Remove the tags from the text so the LLM doesn't get confused by them
             clean_message = re.sub(r'\[image:\s*.+?\]', '', current_message).strip()
 
-        user_content = await self._build_user_content(clean_message, media)
+        user_content = await self._build_user_content(clean_message, media, vision_supported=vision_supported)
 
         # Merge runtime context and user content into a single user message
         # to avoid consecutive same-role messages that some providers reject.
@@ -62,7 +63,7 @@ class ContextBuilder:
             merged = [{"type": "text", "text": runtime_ctx}] + user_content
 
         # Re-hydrate image references in history so the model can "see" them again
-        hydrated_history = await self._hydrate_image_refs(history)
+        hydrated_history = await self._hydrate_image_refs(history, vision_supported=vision_supported)
 
         return [
             {"role": "system", "content": self.build_system_prompt(skill_names)},
@@ -99,10 +100,18 @@ class ContextBuilder:
             logger.warning("Error fetching image from {}: {}", url, e)
             return None
 
-    async def _build_user_content(self, text: str, media: list[str] | None) -> str | list[dict[str, Any]]:
+    async def _build_user_content(self, text: str, media: list[str] | None, vision_supported: bool = True) -> str | list[dict[str, Any]]:
         """Build user message content with base64-encoded images. URLs are fetched and converted."""
         if not media:
             return text
+
+        if not vision_supported:
+            import os
+            placeholders = []
+            for path in media:
+                name = path.split("/")[-1] if "/" in path else path
+                placeholders.append(f"[Image: {name}]")
+            return text + "\n" + "\n".join(placeholders)
 
         images = []
         for path in media:
@@ -126,7 +135,7 @@ class ContextBuilder:
             return text
         return images + [{"type": "text", "text": text}]
 
-    async def _hydrate_image_refs(self, history: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    async def _hydrate_image_refs(self, history: list[dict[str, Any]], vision_supported: bool = True) -> list[dict[str, Any]]:
         """Re-inject base64 image data for [image:path] markers in history."""
         import re
         _REF_PATTERN = re.compile(r'\[image:\s*(.+?)\]')
@@ -146,8 +155,13 @@ class ContextBuilder:
                     m = _REF_PATTERN.search(text)
                     if m:
                         img_path = m.group(1)
-                        img_data = None
+                        img_url = None
                         
+                        if not vision_supported:
+                            new_content.append({"type": "text", "text": f"[Image: {img_path}]"})
+                            changed = True
+                            continue
+
                         if img_path.startswith("http://") or img_path.startswith("https://"):
                             img_data = await self._fetch_image_as_b64(img_path)
                             if img_data:
@@ -205,10 +219,11 @@ class ContextBuilder:
         messages: list[dict[str, Any]],
         content: str,
         media: list[str] | None = None,
+        vision_supported: bool = True,
     ) -> list[dict[str, Any]]:
         """Add a user message to the message list. Supports multimodal media."""
         # Await the content building since it may involve async image fetching
-        user_content = await self._build_user_content(content, media)
+        user_content = await self._build_user_content(content, media, vision_supported=vision_supported)
         messages.append(
             {"role": "user", "content": user_content}
         )

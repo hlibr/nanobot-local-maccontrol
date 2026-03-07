@@ -41,6 +41,11 @@ class LLMProvider(ABC):
         self.api_key = api_key
         self.api_base = api_base
 
+    @abstractmethod
+    def supports_vision(self, model: str | None = None) -> bool:
+        """Check if the given model (or default) supports vision/images."""
+        pass
+
     @staticmethod
     def _sanitize_empty_content(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Replace empty text content that causes provider 400 errors.
