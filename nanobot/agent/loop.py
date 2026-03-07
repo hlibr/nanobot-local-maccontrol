@@ -61,9 +61,30 @@ def _list_models(current_model: str, config=None) -> str:
                         if "data" in data:
                             models = [m["id"] for m in data["data"] if "id" in m]
                             # Only show top 5 locally running to keep it brief
-                            local_models = [f"  ↳ `{m}`" for m in models[:5]]
+                            local_models = [f"  ↳ `custom/{m}`" for m in models[:5]]
             except Exception:
                 pass
+                
+        # Try to fetch free models from OpenRouter if configured
+        or_models = []
+        or_cfg = getattr(cfg.providers, "openrouter", None)
+        if or_cfg and or_cfg.api_key:
+            try:
+                with httpx.Client(timeout=2.0) as client:
+                    resp = client.get("https://openrouter.ai/api/v1/models")
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        if "data" in data:
+                            # Filter for free models only
+                            free_models = [
+                                m["id"] for m in data["data"] 
+                                if m.get("pricing", {}).get("prompt", "") == "0" and 
+                                   m.get("pricing", {}).get("completion", "") == "0"
+                            ]
+                            or_models = [f"  ↳ `openrouter/{m}`" for m in free_models[:5]]
+            except Exception:
+                # Fallback list if API fails
+                or_models = ["  ↳ `openrouter/stepfun/step-3.5-flash:free`"]
                 
         msg = [f"**Current Session Model:** `{current_model}`", ""]
         msg.append(f"**Default Global Model:** `{cfg.agents.defaults.model}`")
@@ -77,6 +98,8 @@ def _list_models(current_model: str, config=None) -> str:
                 msg.append(item)
                 if "Custom" in item and local_models:
                     msg.extend(local_models)
+                elif "OpenRouter" in item and or_models:
+                    msg.extend(or_models)
                     
         msg.append("\n*To switch for this session: /model <provider/model>*")
         msg.append("*To switch permanently (globally): /model <provider/model> -g*")
