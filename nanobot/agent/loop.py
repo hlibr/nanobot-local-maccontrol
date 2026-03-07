@@ -32,24 +32,54 @@ if TYPE_CHECKING:
     from nanobot.cron.service import CronService
 
 
-def _list_models(config=None) -> str:
+def _list_models(current_model: str, config=None) -> str:
     """List currently configured model and available providers."""
     try:
         from nanobot.config.loader import load_config
         from nanobot.providers.registry import PROVIDERS
+        import httpx
+        import asyncio
         
         cfg = config or load_config()
-        current = cfg.agents.defaults.model
         
         configured = []
         for p in PROVIDERS:
             p_config = getattr(cfg.providers, p.name, None)
             if p_config and getattr(p_config, "api_key", None):
-                configured.append(f"- {p.display_name}")
+                configured.append(f"- **{p.display_name}** (`{p.name}`)")
+                
+        # Try to fetch local models from custom provider if configured
+        local_models = []
+        custom_cfg = getattr(cfg.providers, "custom", None)
+        if custom_cfg and custom_cfg.api_base:
+            try:
+                base_url = custom_cfg.api_base.replace("/v1", "") + "/v1/models"
+                with httpx.Client(timeout=1.0) as client:
+                    resp = client.get(base_url)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        if "data" in data:
+                            models = [m["id"] for m in data["data"] if "id" in m]
+                            # Only show top 5 locally running to keep it brief
+                            local_models = [f"  ↳ `{m}`" for m in models[:5]]
+            except Exception:
+                pass
+                
+        msg = [f"**Current Session Model:** `{current_model}`", ""]
+        msg.append(f"**Default Global Model:** `{cfg.agents.defaults.model}`")
+        msg.append("")
+        msg.append("**Configured Providers:**")
         
-        msg = [f"**Current:** `{current}`\n\n**Configured Providers:**"]
-        msg.extend(configured if configured else ["- None"])
-        msg.append("\n*To switch, type: /model <provider/model>*")
+        if not configured:
+            msg.append("- None")
+        else:
+            for item in configured:
+                msg.append(item)
+                if "Custom" in item and local_models:
+                    msg.extend(local_models)
+                    
+        msg.append("\n*To switch for this session: /model <provider/model>*")
+        msg.append("*To switch permanently (globally): /model <provider/model> -g*")
         return "\n".join(msg)
     except Exception as e:
         return f"Could not list models: {e}"
@@ -561,7 +591,7 @@ class AgentLoop:
             parts = cmd.split()
             if len(parts) == 1:
                 # List models
-                result = _list_models()
+                result = _list_models(self.model)
                 return OutboundMessage(channel=msg.channel, chat_id=msg.chat_id, content=result)
             
             global_flag = "-g" in parts
