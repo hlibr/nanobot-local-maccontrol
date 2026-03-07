@@ -44,7 +44,7 @@ class LiteLLMTranscriptionProvider(TranscriptionProvider):
         self.api_base = api_base
 
     async def transcribe(self, file_path: str | Path) -> str:
-        path = Path(file_path)
+        path = Path(file_path).expanduser()
         if not path.exists():
             logger.error("Audio file not found: {}", file_path)
             return ""
@@ -81,6 +81,7 @@ class MLXTranscriptionProvider(TranscriptionProvider):
 
         try:
             import mlx_whisper
+
             self._mlx = mlx_whisper
         except ImportError:
             self._mlx = None
@@ -114,7 +115,7 @@ class MLXTranscriptionProvider(TranscriptionProvider):
         if self._preload_task and not self._preload_task.done():
             await self._preload_task
 
-        path = str(Path(file_path).absolute())
+        path = str(Path(file_path).expanduser().absolute())
         try:
             result = await asyncio.get_event_loop().run_in_executor(
                 None, partial(self._mlx.transcribe, path, path_or_hf_repo=self.model)
