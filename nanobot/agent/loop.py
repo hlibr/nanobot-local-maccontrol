@@ -32,6 +32,45 @@ if TYPE_CHECKING:
     from nanobot.cron.service import CronService
 
 
+def _list_models(config=None) -> str:
+    """List currently configured model and available providers."""
+    try:
+        from nanobot.config.loader import load_config
+        from nanobot.providers.registry import PROVIDERS
+        
+        cfg = config or load_config()
+        current = cfg.agents.defaults.model
+        
+        configured = []
+        for p in PROVIDERS:
+            p_config = getattr(cfg.providers, p.name, None)
+            if p_config and getattr(p_config, "api_key", None):
+                configured.append(f"- {p.display_name}")
+        
+        msg = [f"**Current:** `{current}`\n\n**Configured Providers:**"]
+        msg.extend(configured if configured else ["- None"])
+        msg.append("\n*To switch, type: /model <provider/model>*")
+        return "\n".join(msg)
+    except Exception as e:
+        return f"Could not list models: {e}"
+
+def _set_model(model_name: str, config_path=None) -> str:
+    """Update the default model in config.json and return status."""
+    try:
+        from nanobot.config.loader import load_config, save_config
+        cfg = load_config(config_path)
+        old_model = cfg.agents.defaults.model
+        cfg.agents.defaults.model = model_name
+        try:
+            save_config(cfg, config_path)
+            return f"✅ Model updated globally: {old_model} ➡️ {model_name}\n*(Restart required for subagents/cron to see global changes)*"
+        except Exception as e:
+            cfg.agents.defaults.model = old_model
+            raise RuntimeError(f"Failed to save config: {e}")
+    except Exception as e:
+        raise RuntimeError(str(e))
+
+
 class AgentLoop:
     """
     The agent loop is the core processing engine.
@@ -482,8 +521,33 @@ class AgentLoop:
             return OutboundMessage(
                 channel=msg.channel,
                 chat_id=msg.chat_id,
-                content="🐈 nanobot commands:\n/new — Start a new conversation\n/stop — Stop the current task\n/help — Show available commands",
+                content="🐈 nanobot commands:\n/new — Start a new conversation\n/stop — Stop the current task\n/model — Switch LLM model\n/help — Show available commands",
             )
+        if cmd.startswith("/model"):
+            parts = cmd.split()
+            if len(parts) == 1:
+                # List models
+                result = _list_models()
+                return OutboundMessage(channel=msg.channel, chat_id=msg.chat_id, content=result)
+            
+            global_flag = "-g" in parts
+            if global_flag:
+                parts.remove("-g")
+            
+            new_model = " ".join(parts[1:])
+            if "/" not in new_model:
+                return OutboundMessage(channel=msg.channel, chat_id=msg.chat_id, 
+                                      content="Usage: /model <provider/model> [-g]\nExample: /model openai/gpt-4o")
+            
+            self.model = self.subagents.model = new_model
+            if global_flag:
+                try:
+                    result = _set_model(new_model)
+                except RuntimeError as e:
+                    result = f"❌ {e}"
+            else:
+                result = f"✅ Model: {new_model} (session)"
+            return OutboundMessage(channel=msg.channel, chat_id=msg.chat_id, content=result)
 
         unconsolidated = len(session.messages) - session.last_consolidated
         if unconsolidated >= self.memory_window and session.key not in self._consolidating:
