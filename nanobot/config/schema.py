@@ -338,11 +338,19 @@ class MCPServerConfig(Base):
     tool_timeout: int = 30  # seconds before a tool call is cancelled
 
 
+class DesktopToolsConfig(Base):
+    """Configuration for native macOS desktop control."""
+
+    enabled: bool = False
+    screenshot_quality: int = 80  # PNG compression quality
+
+
 class ToolsConfig(Base):
     """Tools configuration."""
 
     web: WebToolsConfig = Field(default_factory=WebToolsConfig)
     exec: ExecToolConfig = Field(default_factory=ExecToolConfig)
+    desktop: DesktopToolsConfig = Field(default_factory=DesktopToolsConfig)
     restrict_to_workspace: bool = False  # If true, restrict all tool access to workspace directory
     mcp_servers: dict[str, MCPServerConfig] = Field(default_factory=dict)
     enabled: list[str] | None = None  # If set, only these tools will be loaded (None = all enabled)

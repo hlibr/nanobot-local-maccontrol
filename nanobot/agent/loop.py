@@ -16,6 +16,7 @@ from nanobot.agent.context import ContextBuilder
 from nanobot.agent.memory import MemoryStore
 from nanobot.agent.subagent import SubagentManager
 from nanobot.agent.tools.cron import CronTool
+from nanobot.agent.tools.desktop import AppleScriptTool, CaptureScreenTool, DesktopActionTool, DesktopUIMetadataTool
 from nanobot.agent.tools.filesystem import EditFileTool, ListDirTool, ReadFileTool, WriteFileTool
 from nanobot.agent.tools.message import MessageTool
 from nanobot.agent.tools.registry import ToolRegistry
@@ -303,6 +304,21 @@ class AgentLoop:
             self.tools.register(SpawnTool(manager=self.subagents))
         if is_enabled("cron") and self.cron_service:
             self.tools.register(CronTool(self.cron_service))
+
+        # Desktop tools (macOS only)
+        if self.tools_config and self.tools_config.desktop.enabled:
+            import platform
+            if platform.system() == "Darwin":
+                if is_enabled("applescript"):
+                    self.tools.register(AppleScriptTool())
+                if is_enabled("capture_screen"):
+                    self.tools.register(CaptureScreenTool(media_dir=self.workspace / "media"))
+                if is_enabled("get_ui_metadata"):
+                    self.tools.register(DesktopUIMetadataTool())
+                if is_enabled("desktop_action"):
+                    self.tools.register(DesktopActionTool())
+            else:
+                logger.warning("Desktop tools requested but platform is not macOS")
 
     async def _connect_mcp(self) -> None:
         """Connect to configured MCP servers (one-time, lazy)."""

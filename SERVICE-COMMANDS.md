@@ -14,8 +14,7 @@ launchctl unload ~/Library/LaunchAgents/com.hlibr.nanobot.plist
 Restart Manually:
 
 bash
-launchctl unload ~/Library/LaunchAgents/com.hlibr.nanobot.plist
-launchctl load ~/Library/LaunchAgents/com.hlibr.nanobot.plist
+launchctl unload ~/Library/LaunchAgents/com.hlibr.nanobot.plist &&launchctl load ~/Library/LaunchAgents/com.hlibr.nanobot.plist
 
 Tail Logs:
 
