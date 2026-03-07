@@ -92,11 +92,13 @@ class MessageTool(Tool):
 
         resolved_media = []
         if media:
+            from urllib.parse import unquote
+
             for path in media:
                 if path.startswith("http://") or path.startswith("https://"):
                     resolved_media.append(path)
                 else:
-                    p = Path(path).expanduser()
+                    p = Path(unquote(path)).expanduser()
                     if not p.is_absolute():
                         if self._workspace:
                             p = self._workspace / p

@@ -11,7 +11,9 @@ def _resolve_path(
     path: str, workspace: Path | None = None, allowed_dir: Path | None = None
 ) -> Path:
     """Resolve path against workspace (if relative) and enforce directory restriction."""
-    p = Path(path).expanduser()
+    from urllib.parse import unquote
+
+    p = Path(unquote(path)).expanduser()
     if not p.is_absolute() and workspace:
         p = workspace / p
     resolved = p.resolve()
@@ -65,7 +67,10 @@ class ReadFileTool(Tool):
 
             content = file_path.read_text(encoding="utf-8")
             if len(content) > self._MAX_CHARS:
-                return content[: self._MAX_CHARS] + f"\n\n... (truncated — file is {len(content):,} chars, limit {self._MAX_CHARS:,})"
+                return (
+                    content[: self._MAX_CHARS]
+                    + f"\n\n... (truncated — file is {len(content):,} chars, limit {self._MAX_CHARS:,})"
+                )
             return content
         except PermissionError as e:
             return f"Error: {e}"

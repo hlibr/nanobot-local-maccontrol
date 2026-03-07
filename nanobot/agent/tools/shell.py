@@ -62,11 +62,12 @@ class ExecTool(Tool):
 
     async def execute(self, command: str, working_dir: str | None = None, **kwargs: Any) -> str:
         from pathlib import Path
+        from urllib.parse import unquote
 
         if working_dir:
-            cwd = str(Path(working_dir).expanduser())
+            cwd = str(Path(unquote(working_dir)).expanduser())
         elif self.working_dir:
-            cwd = str(Path(self.working_dir).expanduser())
+            cwd = str(Path(unquote(self.working_dir)).expanduser())
         else:
             cwd = os.getcwd()
 

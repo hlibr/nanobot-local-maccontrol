@@ -44,7 +44,9 @@ class LiteLLMTranscriptionProvider(TranscriptionProvider):
         self.api_base = api_base
 
     async def transcribe(self, file_path: str | Path) -> str:
-        path = Path(file_path).expanduser()
+        from urllib.parse import unquote
+
+        path = Path(unquote(str(file_path))).expanduser()
         if not path.exists():
             logger.error("Audio file not found: {}", file_path)
             return ""

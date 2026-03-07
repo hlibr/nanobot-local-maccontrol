@@ -283,7 +283,9 @@ class ViewImageTool(Tool):
 
     async def execute(self, path: str, **kwargs: Any) -> str:
         if not path.startswith("http://") and not path.startswith("https://"):
-            p = Path(path).expanduser()
+            from urllib.parse import unquote
+
+            p = Path(unquote(path)).expanduser()
             if not p.is_absolute():
                 if self._workspace:
                     p = self._workspace / p
@@ -360,8 +362,9 @@ class SendImageTool(Tool):
 
         if not path.startswith("http://") and not path.startswith("https://"):
             from pathlib import Path
+            from urllib.parse import unquote
 
-            p = Path(path).expanduser()
+            p = Path(unquote(path)).expanduser()
             if not p.is_absolute():
                 if self._workspace:
                     p = self._workspace / p
