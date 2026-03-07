@@ -31,7 +31,7 @@ class ContextBuilder:
             lines += [f"Channel: {channel}", f"Chat ID: {chat_id}"]
         return ContextBuilder._RUNTIME_CONTEXT_TAG + "\n" + "\n".join(lines)
 
-    def build_messages(
+    async def build_messages(
         self,
         history: list[dict[str, Any]],
         current_message: str,
@@ -52,7 +52,7 @@ class ContextBuilder:
             # Remove the tags from the text so the LLM doesn't get confused by them
             clean_message = re.sub(r'\[image:\s*.+?\]', '', current_message).strip()
 
-        user_content = self._build_user_content(clean_message, media)
+        user_content = await self._build_user_content(clean_message, media)
 
         # Merge runtime context and user content into a single user message
         # to avoid consecutive same-role messages that some providers reject.
@@ -62,7 +62,7 @@ class ContextBuilder:
             merged = [{"type": "text", "text": runtime_ctx}] + user_content
 
         # Re-hydrate image references in history so the model can "see" them again
-        hydrated_history = self._hydrate_image_refs(history)
+        hydrated_history = await self._hydrate_image_refs(history)
 
         return [
             {"role": "system", "content": self.build_system_prompt(skill_names)},
@@ -70,16 +70,49 @@ class ContextBuilder:
             {"role": "user", "content": merged},
         ]
 
-    def _build_user_content(self, text: str, media: list[str] | None) -> str | list[dict[str, Any]]:
-        """Build user message content with optional base64-encoded images or URLs."""
+    async def _fetch_image_as_b64(self, url: str) -> tuple[str, str] | None:
+        """Fetch image from URL and return (mime, b64_data). Follows redirects, handles errors."""
+        import httpx
+        from loguru import logger
+        try:
+            async with httpx.AsyncClient(follow_redirects=True, timeout=10.0) as client:
+                resp = await client.get(url)
+                if resp.status_code != 200:
+                    logger.warning("Failed to fetch image from {}: HTTP {}", url, resp.status_code)
+                    return None
+                
+                mime = resp.headers.get("Content-Type", "")
+                if not mime.startswith("image/"):
+                    # Try to guess from URL if header is missing/generic
+                    mime, _ = mimetypes.guess_type(url)
+                    if not mime or not mime.startswith("image/"):
+                        mime = "image/jpeg" # Fallback
+                
+                data = resp.content
+                if len(data) > 10 * 1024 * 1024:
+                    logger.warning("Image from {} is too large ({} bytes)", url, len(data))
+                    return None
+                
+                b64 = base64.b64encode(data).decode()
+                return mime, b64
+        except Exception as e:
+            logger.warning("Error fetching image from {}: {}", url, e)
+            return None
+
+    async def _build_user_content(self, text: str, media: list[str] | None) -> str | list[dict[str, Any]]:
+        """Build user message content with base64-encoded images. URLs are fetched and converted."""
         if not media:
             return text
 
         images = []
         for path in media:
             if path.startswith("http://") or path.startswith("https://"):
-                # Pass URLs directly to LiteLLM-enabled providers
-                images.append({"type": "image_url", "image_url": {"url": path}})
+                result = await self._fetch_image_as_b64(path)
+                if result:
+                    mime, b64 = result
+                    images.append({"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}})
+                else:
+                    images.append({"type": "text", "text": f"[System: Image load failed from {path}]"})
                 continue
 
             p = Path(path)
@@ -93,9 +126,8 @@ class ContextBuilder:
             return text
         return images + [{"type": "text", "text": text}]
 
-    @staticmethod
-    def _hydrate_image_refs(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Re-inject base64 image data or URLs for [image:path] markers in history."""
+    async def _hydrate_image_refs(self, history: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Re-inject base64 image data for [image:path] markers in history."""
         import re
         _REF_PATTERN = re.compile(r'\[image:\s*(.+?)\]')
 
@@ -114,32 +146,39 @@ class ContextBuilder:
                     m = _REF_PATTERN.search(text)
                     if m:
                         img_path = m.group(1)
-                        is_url = img_path.startswith("http://") or img_path.startswith("https://")
+                        img_data = None
                         
-                        if is_url:
-                            # Re-add as URL
-                            cleaned_text = _REF_PATTERN.sub('', text).strip()
-                            if cleaned_text:
-                                new_content.append({"type": "text", "text": cleaned_text})
-                            new_content.append({"type": "image_url", "image_url": {"url": img_path}})
-                            changed = True
-                            continue
+                        if img_path.startswith("http://") or img_path.startswith("https://"):
+                            img_data = await self._fetch_image_as_b64(img_path)
+                            if img_data:
+                                mime, b64 = img_data
+                                img_url = f"data:{mime};base64,{b64}"
+                            else:
+                                # Keep the text error node
+                                new_content.append({"type": "text", "text": f"[System: History image load failed: {img_path}]"})
+                                changed = True
+                                continue
                         else:
                             p = Path(img_path)
                             mime, _ = mimetypes.guess_type(img_path)
                             if p.is_file() and mime and mime.startswith("image/"):
-                                # Filter out the tag from the text block
-                                cleaned_text = _REF_PATTERN.sub('', text).strip()
-                                if cleaned_text:
-                                    new_content.append({"type": "text", "text": cleaned_text})
-                                
                                 b64 = base64.b64encode(p.read_bytes()).decode()
-                                new_content.append({
-                                    "type": "image_url",
-                                    "image_url": {"url": f"data:{mime};base64,{b64}"}
-                                })
-                                changed = True
+                                img_url = f"data:{mime};base64,{b64}"
+                            else:
                                 continue
+
+                        if img_url:
+                            # Filter out the tag from the text block
+                            cleaned_text = _REF_PATTERN.sub('', text).strip()
+                            if cleaned_text:
+                                new_content.append({"type": "text", "text": cleaned_text})
+                            
+                            new_content.append({
+                                "type": "image_url",
+                                "image_url": {"url": img_url}
+                            })
+                            changed = True
+                            continue
                 new_content.append(block)
 
             if changed:
