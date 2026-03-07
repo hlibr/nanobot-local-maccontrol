@@ -313,7 +313,7 @@ class SendImageTool(Tool):
 
     @property
     def description(self) -> str:
-        return "Send an image file from the local filesystem to the user on Telegram."
+        return "Send an image to the user on Telegram. The 'path' can be an absolute local filesystem path OR a direct URL (http/https)."
 
     @property
     def parameters(self) -> dict[str, Any]:

@@ -265,13 +265,29 @@ class TelegramChannel(BaseChannel):
                     "voice": self._app.bot.send_voice,
                     "audio": self._app.bot.send_audio,
                 }.get(media_type, self._app.bot.send_document)
+                
                 param = "photo" if media_type == "photo" else media_type if media_type in ("voice", "audio") else "document"
-                with open(media_path, 'rb') as f:
+                
+                if media_path.startswith("http://") or media_path.startswith("https://"):
+                    # Send directly by URL
                     await sender(
                         chat_id=chat_id,
-                        **{param: f},
+                        **{param: media_path},
+                        caption=msg.content if msg.content and msg.content != "[empty message]" else None,
                         reply_parameters=reply_params
                     )
+                    # If we sent the caption with the image, clear it so it doesn't send again as text
+                    msg.content = "[empty message]"
+                else:
+                    # Send local file
+                    with open(media_path, 'rb') as f:
+                        await sender(
+                            chat_id=chat_id,
+                            **{param: f},
+                            caption=msg.content if msg.content and msg.content != "[empty message]" else None,
+                            reply_parameters=reply_params
+                        )
+                    msg.content = "[empty message]"
             except Exception as e:
                 filename = media_path.rsplit("/", 1)[-1]
                 logger.error("Failed to send media {}: {}", media_path, e)
