@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-import os
+import asyncio
 from abc import ABC, abstractmethod
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -18,19 +19,23 @@ class TranscriptionProvider(ABC):
 
     @abstractmethod
     async def transcribe(self, file_path: str | Path) -> str:
-        """Transcribe an audio file."""
+        """Transcribe an audio file and return the text."""
+        pass
+
+    async def preload(self) -> None:
+        """Optional: eagerly load model weights into memory before first use."""
         pass
 
 
 class LiteLLMTranscriptionProvider(TranscriptionProvider):
     """
-    Transcription provider using LiteLLM.
-    Supports OpenAI, Groq, and local OpenAI-compatible endpoints.
+    Cloud/remote transcription via LiteLLM.
+    Supports Groq, OpenAI, and any other LiteLLM-compatible endpoint.
     """
 
     def __init__(
         self,
-        model: str = "whisper-large-v3",
+        model: str,
         api_key: str | None = None,
         api_base: str | None = None,
     ):
@@ -39,16 +44,12 @@ class LiteLLMTranscriptionProvider(TranscriptionProvider):
         self.api_base = api_base
 
     async def transcribe(self, file_path: str | Path) -> str:
-        """Transcribe an audio file using LiteLLM."""
         path = Path(file_path)
         if not path.exists():
             logger.error("Audio file not found: {}", file_path)
             return ""
 
-        kwargs: dict[str, Any] = {
-            "model": self.model,
-            "file": open(path, "rb"),
-        }
+        kwargs: dict[str, Any] = {"model": self.model, "file": open(path, "rb")}
         if self.api_key:
             kwargs["api_key"] = self.api_key
         if self.api_base:
@@ -61,17 +62,23 @@ class LiteLLMTranscriptionProvider(TranscriptionProvider):
             logger.error("LiteLLM transcription error: {}", e)
             return ""
         finally:
-            if "file" in kwargs:
-                kwargs["file"].close()
+            kwargs["file"].close()
 
 
 class MLXTranscriptionProvider(TranscriptionProvider):
     """
-    Local transcription using mlx-whisper (highly optimized for Apple Silicon).
+    Local transcription using mlx-whisper, optimised for Apple Silicon.
+
+    The model is loaded lazily on first use. If `preload=True`, it is instead
+    loaded eagerly in the background (via `preload()`) so the first real
+    transcription is instantaneous.
     """
 
-    def __init__(self, model: str = "mlx-community/whisper-large-v3-mlx"):
+    def __init__(self, model: str = "mlx-community/whisper-large-v3-mlx", preload: bool = False):
         self.model = model
+        self._do_preload = preload
+        self._preload_task: asyncio.Task | None = None
+
         try:
             import mlx_whisper
             self._mlx = mlx_whisper
@@ -79,19 +86,38 @@ class MLXTranscriptionProvider(TranscriptionProvider):
             self._mlx = None
             logger.warning("mlx-whisper not installed. Run: pip install mlx-whisper")
 
+    async def preload(self) -> None:
+        """Start loading the model into memory in a background task."""
+        if not self._do_preload or not self._mlx or self._preload_task:
+            return
+        logger.info("MLX: preloading model in background: {}", self.model)
+        self._preload_task = asyncio.create_task(self._load_model())
+
+    async def _load_model(self) -> None:
+        """Load model weights through ModelHolder so transcribe() reuses the cache."""
+        try:
+            import mlx.core as mx
+            from mlx_whisper.transcribe import ModelHolder
+
+            await asyncio.get_event_loop().run_in_executor(
+                None, partial(ModelHolder.get_model, self.model, mx.float16)
+            )
+            logger.info("MLX: model resident in memory: {}", self.model)
+        except Exception as e:
+            logger.warning("MLX: preload failed: {}", e)
+
     async def transcribe(self, file_path: str | Path) -> str:
         if not self._mlx:
             return ""
-        
+
+        # If preloading is in-flight, finish that first — no double load
+        if self._preload_task and not self._preload_task.done():
+            await self._preload_task
+
         path = str(Path(file_path).absolute())
         try:
-            # mlx_whisper.transcribe is synchronous; run in thread
-            import asyncio
-            from functools import partial
-            loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(
-                None, 
-                partial(self._mlx.transcribe, path, path_or_hf_repo=self.model)
+            result = await asyncio.get_event_loop().run_in_executor(
+                None, partial(self._mlx.transcribe, path, path_or_hf_repo=self.model)
             )
             return result.get("text", "").strip()
         except Exception as e:
@@ -99,33 +125,23 @@ class MLXTranscriptionProvider(TranscriptionProvider):
             return ""
 
 
-class GroqTranscriptionProvider(LiteLLMTranscriptionProvider):
-    """Legacy wrapper for Groq transcription."""
-
-    def __init__(self, api_key: str | None = None):
-        super().__init__(
-            model="whisper-large-v3",
-            api_key=api_key,
-        )
-
-
 def get_transcription_provider(config: TranscriptionConfig | None) -> TranscriptionProvider | None:
-    """Factory to create a transcription provider based on config."""
+    """Factory: create the right transcription provider from config."""
     if not config or not config.enabled:
         return None
 
     p = config.provider.lower()
-    
+
     if p == "mlx":
-        return MLXTranscriptionProvider(model=config.model)
-    
-    # Default to LiteLLM for everything else (groq, openai, local servers)
+        return MLXTranscriptionProvider(model=config.model, preload=config.preload)
+
+    # Everything else goes through LiteLLM (groq, openai, azure, deepgram, …)
     model = config.model
-    if "/" not in model and p not in ["openai", "custom"]:
+    if "/" not in model and p not in ("openai", "custom"):
         model = f"{p}/{model}"
 
     return LiteLLMTranscriptionProvider(
         model=model,
-        api_key=config.api_key,
+        api_key=config.api_key or None,
         api_base=config.api_base,
     )
