@@ -95,7 +95,7 @@ class ContextBuilder:
             changed = False
             for block in content:
                 if block.get("type") == "text":
-                    m = _REF_PATTERN.match(block.get("text", ""))
+                    m = _REF_PATTERN.search(block.get("text", ""))
                     if m:
                         img_path = m.group(1)
                         p = Path(img_path)

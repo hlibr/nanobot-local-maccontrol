@@ -440,6 +440,9 @@ class AgentLoop:
                     thinking_blocks=response.thinking_blocks,
                 )
 
+                # Buffer images for a single synthetic user message at the end of the tool turn
+                images_to_inject = []
+
                 for tool_call in response.tool_calls:
                     tools_used.append(tool_call.name)
                     args_str = json.dumps(tool_call.arguments, ensure_ascii=False)
@@ -449,16 +452,19 @@ class AgentLoop:
                         messages, tool_call.id, tool_call.name, result
                     )
 
-                    # Auto-Vision: detect [image: path] tags and inject as a synthetic User message
                     if isinstance(result, str) and "[image:" in result:
-                        image_matches = re.findall(r"\[image:\s*(.+?)\]", result)
-                        if image_matches:
-                            logger.info("Injecting {} image(s) into vision context", len(image_matches))
-                            messages = self.context.add_user_message(
-                                messages,
-                                "I have attached the screenshot(s) or image(s) from the tool result above.",
-                                media=[m.strip() for m in image_matches]
-                            )
+                        matches = re.findall(r"\[image:\s*(.+?)\]", result)
+                        images_to_inject.extend([m.strip() for m in matches])
+
+                if images_to_inject:
+                    logger.info("Injecting {} image(s) into vision context", len(images_to_inject))
+                    # Include the tags in the text so history re-hydration can find them later
+                    tags = " ".join([f"[image: {m}]" for m in images_to_inject])
+                    messages = self.context.add_user_message(
+                        messages,
+                        f"I have attached the images/screenshots from the tool results: {tags}",
+                        media=images_to_inject
+                    )
             else:
                 clean = self._strip_think(response.content)
                 # Don't persist error responses to session history — they can
@@ -799,6 +805,15 @@ class AgentLoop:
                         continue
                 if isinstance(content, list):
                     filtered = []
+                    # Extract all image paths from text blocks in this turn
+                    turn_paths = []
+                    for tc in content:
+                        if tc.get("type") == "text":
+                            import re
+                            matches = re.findall(r'\[image:\s*(.+?)\]', tc.get("text", ""))
+                            turn_paths.extend(matches)
+                    
+                    img_idx = 0
                     for c in content:
                         if (
                             c.get("type") == "text"
@@ -806,21 +821,16 @@ class AgentLoop:
                             and c["text"].startswith(ContextBuilder._RUNTIME_CONTEXT_TAG)
                         ):
                             continue  # Strip runtime context from multimodal messages
+                        
                         if c.get("type") == "image_url" and c.get("image_url", {}).get(
                             "url", ""
                         ).startswith("data:image/"):
-                            # Store path reference so images can be re-injected on future turns.
-                            img_path = None
-                            for tc in content:
-                                if tc.get("type") == "text":
-                                    txt = tc.get("text", "")
-                                    import re
-                                    m = re.search(r'\[image:\s*(.+?)\]', txt)
-                                    if m:
-                                        img_path = m.group(1)
-                                        break
+                            # Map the image block to its path by index
+                            img_path = turn_paths[img_idx] if img_idx < len(turn_paths) else None
+                            img_idx += 1
+                            
                             if img_path:
-                                filtered.append({"type": "text", "text": f"[image_ref:{img_path}]"})
+                                filtered.append({"type": "text", "text": f"[image: {img_path}]"})
                             else:
                                 filtered.append({"type": "text", "text": "[image]"})
                         else:
