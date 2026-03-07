@@ -82,23 +82,24 @@ class ContextBuilder:
                     logger.warning("Failed to fetch image from {}: HTTP {}", url, resp.status_code)
                     return None
                 
-                mime = resp.headers.get("Content-Type", "")
+                mime = resp.headers.get("Content-Type", "").split(";")[0].strip()
                 if not mime.startswith("image/"):
-                    # Try to guess from URL if header is missing/generic
+                    # Try to guess from URL if header is missing/generic/misconfigured
                     mime, _ = mimetypes.guess_type(url)
                     if not mime or not mime.startswith("image/"):
-                        mime = "image/jpeg" # Fallback
+                        logger.warning("Fetched content from {} is not an image (MIME: {})", url, mime or "unknown")
+                        return "invalid_type"
                 
                 data = resp.content
                 if len(data) > 10 * 1024 * 1024:
                     logger.warning("Image from {} is too large ({} bytes)", url, len(data))
-                    return None
+                    return "too_large"
                 
                 b64 = base64.b64encode(data).decode()
                 return mime, b64
         except Exception as e:
             logger.warning("Error fetching image from {}: {}", url, e)
-            return None
+            return "error"
 
     async def _build_user_content(self, text: str, media: list[str] | None, vision_supported: bool = True) -> str | list[dict[str, Any]]:
         """Build user message content with base64-encoded images. URLs are fetched and converted."""
@@ -117,9 +118,13 @@ class ContextBuilder:
         for path in media:
             if path.startswith("http://") or path.startswith("https://"):
                 result = await self._fetch_image_as_b64(path)
-                if result:
+                if isinstance(result, tuple):
                     mime, b64 = result
                     images.append({"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}})
+                elif result == "invalid_type":
+                    images.append({"type": "text", "text": f"[System: The URL {path} is not an image (e.g. it's a webpage)]"})
+                elif result == "too_large":
+                    images.append({"type": "text", "text": f"[System: The image at {path} is too large (>10MB)]"})
                 else:
                     images.append({"type": "text", "text": f"[System: Image load failed from {path}]"})
                 continue
@@ -163,10 +168,18 @@ class ContextBuilder:
                             continue
 
                         if img_path.startswith("http://") or img_path.startswith("https://"):
-                            img_data = await self._fetch_image_as_b64(img_path)
-                            if img_data:
-                                mime, b64 = img_data
+                            result = await self._fetch_image_as_b64(img_path)
+                            if isinstance(result, tuple):
+                                mime, b64 = result
                                 img_url = f"data:{mime};base64,{b64}"
+                            elif result == "invalid_type":
+                                new_content.append({"type": "text", "text": f"[System: History image {img_path} is not an image (e.g. it's a webpage)]"})
+                                changed = True
+                                continue
+                            elif result == "too_large":
+                                new_content.append({"type": "text", "text": f"[System: History image {img_path} is too large (>10MB)]"})
+                                changed = True
+                                continue
                             else:
                                 # Keep the text error node
                                 new_content.append({"type": "text", "text": f"[System: History image load failed: {img_path}]"})

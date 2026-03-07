@@ -278,7 +278,14 @@ class ViewImageTool(Tool):
     async def execute(self, path: str, **kwargs: Any) -> str:
         try:
             if path.startswith("http://") or path.startswith("https://"):
-                # Always allow URLs to be viewed
+                # Basic check to see if it looks like a webpage instead of an image
+                ext = path.split("/")[-1].split("?")[0].split("#")[0].lower()
+                if "." in ext:
+                    suffix = "." + ext.split(".")[-1]
+                    if suffix in (".php", ".html", ".htm", ".js", ".css", ".jsp", ".asp", ".aspx"):
+                        return f"Error: URL appears to be a webpage, not an image (detected extension: {suffix})"
+                
+                # Always allow URLs to be viewed if they don't look like code/webpages
                 return f"[image: {path}]"
 
             p = Path(path)
