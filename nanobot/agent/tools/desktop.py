@@ -31,28 +31,27 @@ class AppleScriptTool(Tool):
         return {
             "type": "object",
             "properties": {
-                "script": {
-                    "type": "string",
-                    "description": "The AppleScript code to execute"
-                }
+                "script": {"type": "string", "description": "The AppleScript code to execute"}
             },
-            "required": ["script"]
+            "required": ["script"],
         }
 
     async def execute(self, script: str, **kwargs: Any) -> str:
         try:
             # osascript -e "script code"
             process = await asyncio.create_subprocess_exec(
-                "osascript", "-e", script,
+                "osascript",
+                "-e",
+                script,
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
+                stderr=asyncio.subprocess.PIPE,
             )
             stdout, stderr = await process.communicate()
-            
+
             if process.returncode != 0:
                 err = stderr.decode().strip()
                 return f"Error: AppleScript failed with exit code {process.returncode}: {err}"
-            
+
             return stdout.decode().strip() or "Success (no output)"
         except Exception as e:
             return f"Error executing AppleScript: {str(e)}"
@@ -81,21 +80,24 @@ class CaptureScreenTool(Tool):
         try:
             # Use native 'screencapture' tool on macOS
             import time
+
             timestamp = int(time.time() * 1000)
             file_path = self.media_dir / f"screenshot_{timestamp}.png"
-            
+
             # -x flag: silent (no shutter sound)
             # screencapture -x path.png
             process = await asyncio.create_subprocess_exec(
-                "screencapture", "-x", str(file_path),
+                "screencapture",
+                "-x",
+                str(file_path),
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
+                stderr=asyncio.subprocess.PIPE,
             )
             await process.communicate()
-            
+
             if not file_path.exists():
                 return "Error: Failed to capture screen (check Screen Recording permissions)."
-            
+
             # The AgentLoop will see this path and re-hydrate it into vision context
             return f"[image: {file_path}]"
         except Exception as e:
@@ -158,9 +160,11 @@ class DesktopUIMetadataTool(Tool):
         """
         try:
             process = await asyncio.create_subprocess_exec(
-                "osascript", "-e", script,
+                "osascript",
+                "-e",
+                script,
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
+                stderr=asyncio.subprocess.PIPE,
             )
             stdout, stderr = await process.communicate()
             if process.returncode != 0:
@@ -192,7 +196,7 @@ class DesktopActionTool(Tool):
                 "action": {
                     "type": "string",
                     "description": "Action to perform",
-                    "enum": ["click", "double_click", "right_click", "type", "key_combo"]
+                    "enum": ["click", "double_click", "right_click", "type", "key_combo"],
                 },
                 "params": {
                     "type": "object",
@@ -201,11 +205,11 @@ class DesktopActionTool(Tool):
                         "x": {"type": "integer"},
                         "y": {"type": "integer"},
                         "text": {"type": "string"},
-                        "keys": {"type": "string"}
-                    }
-                }
+                        "keys": {"type": "string"},
+                    },
+                },
             },
-            "required": ["action", "params"]
+            "required": ["action", "params"],
         }
 
     async def execute(self, action: str, params: dict[str, Any], **kwargs: Any) -> str:
@@ -237,15 +241,17 @@ class DesktopActionTool(Tool):
                 return "Error: Invalid action or missing parameters."
 
             process = await asyncio.create_subprocess_exec(
-                "osascript", "-e", script,
+                "osascript",
+                "-e",
+                script,
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
+                stderr=asyncio.subprocess.PIPE,
             )
             stdout, stderr = await process.communicate()
             if process.returncode != 0:
                 err = stderr.decode().strip()
                 return f"Error: {err}"
-            
+
             return f"Successfully performed {action}."
         except Exception as e:
             return f"Error: {str(e)}"
@@ -253,6 +259,9 @@ class DesktopActionTool(Tool):
 
 class ViewImageTool(Tool):
     """Tool to view an image file and understand its content."""
+
+    def __init__(self, workspace: Path | None = None):
+        self._workspace = workspace
 
     @property
     def name(self) -> str:
@@ -267,15 +276,21 @@ class ViewImageTool(Tool):
         return {
             "type": "object",
             "properties": {
-                "path": {
-                    "type": "string",
-                    "description": "Absolute path to the image file"
-                }
+                "path": {"type": "string", "description": "Absolute path to the image file"}
             },
-            "required": ["path"]
+            "required": ["path"],
         }
 
     async def execute(self, path: str, **kwargs: Any) -> str:
+        if not path.startswith("http://") and not path.startswith("https://"):
+            p = Path(path)
+            if not p.is_absolute():
+                if self._workspace:
+                    p = self._workspace / p
+                else:
+                    p = Path.cwd() / p
+            path = str(p.expanduser().resolve())
+
         try:
             if path.startswith("http://") or path.startswith("https://"):
                 # Basic check to see if it looks like a webpage instead of an image
@@ -284,22 +299,23 @@ class ViewImageTool(Tool):
                     suffix = "." + ext.split(".")[-1]
                     if suffix in (".php", ".html", ".htm", ".js", ".css", ".jsp", ".asp", ".aspx"):
                         return f"Error: URL appears to be a webpage, not an image (detected extension: {suffix})"
-                
+
                 # Always allow URLs to be viewed if they don't look like code/webpages
                 return f"[image: {path}]"
 
             p = Path(path)
             if not p.is_file():
                 return f"Error: File not found at {path}"
-            
+
             import mimetypes
+
             mime, _ = mimetypes.guess_type(path)
             if not mime or not mime.startswith("image/"):
                 # Check if it has a common image extension even if mime guess failed
                 ext = p.suffix.lower()
                 if ext not in (".png", ".jpg", ".jpeg", ".webp", ".gif"):
                     return f"Error: File is not an image (Mime: {mime}, Extension: {ext})"
-            
+
             # The AgentLoop will see this path and re-hydrate it into vision context
             return f"[image: {path}]"
         except Exception as e:
@@ -309,10 +325,11 @@ class ViewImageTool(Tool):
 class SendImageTool(Tool):
     """Tool to send an image to the user."""
 
-    def __init__(self, send_callback=None):
+    def __init__(self, send_callback=None, workspace: Path | None = None):
         self._send_callback = send_callback
         self._default_channel = ""
         self._default_chat_id = ""
+        self._workspace = workspace
 
     def set_context(self, channel: str, chat_id: str, **kwargs) -> None:
         self._default_channel = channel
@@ -331,28 +348,34 @@ class SendImageTool(Tool):
         return {
             "type": "object",
             "properties": {
-                "path": {
-                    "type": "string",
-                    "description": "Absolute path to the image file"
-                },
-                "caption": {
-                    "type": "string",
-                    "description": "Optional caption for the image"
-                }
+                "path": {"type": "string", "description": "Absolute path to the image file"},
+                "caption": {"type": "string", "description": "Optional caption for the image"},
             },
-            "required": ["path"]
+            "required": ["path"],
         }
 
     async def execute(self, path: str, caption: str = "", **kwargs: Any) -> str:
         if not self._send_callback:
             return "Error: Send callback not configured"
-        
+
+        if not path.startswith("http://") and not path.startswith("https://"):
+            from pathlib import Path
+
+            p = Path(path)
+            if not p.is_absolute():
+                if self._workspace:
+                    p = self._workspace / p
+                else:
+                    p = Path.cwd() / p
+            path = str(p.expanduser().resolve())
+
         from nanobot.bus.events import OutboundMessage
+
         msg = OutboundMessage(
             channel=self._default_channel,
             chat_id=self._default_chat_id,
             content=caption or "Image attached",
-            media=[path]
+            media=[path],
         )
         await self._send_callback(msg)
         return f"Image sent to user: {path}"

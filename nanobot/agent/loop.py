@@ -16,7 +16,14 @@ from nanobot.agent.context import ContextBuilder
 from nanobot.agent.memory import MemoryStore
 from nanobot.agent.subagent import SubagentManager
 from nanobot.agent.tools.cron import CronTool
-from nanobot.agent.tools.desktop import AppleScriptTool, CaptureScreenTool, DesktopActionTool, DesktopUIMetadataTool, SendImageTool, ViewImageTool
+from nanobot.agent.tools.desktop import (
+    AppleScriptTool,
+    CaptureScreenTool,
+    DesktopActionTool,
+    DesktopUIMetadataTool,
+    SendImageTool,
+    ViewImageTool,
+)
 from nanobot.agent.tools.filesystem import EditFileTool, ListDirTool, ReadFileTool, WriteFileTool
 from nanobot.agent.tools.message import MessageTool
 from nanobot.agent.tools.registry import ToolRegistry
@@ -40,15 +47,15 @@ def _list_models(current_model: str, config=None) -> str:
         from nanobot.providers.registry import PROVIDERS
         import httpx
         import asyncio
-        
+
         cfg = config or load_config()
-        
+
         configured = []
         for p in PROVIDERS:
             p_config = getattr(cfg.providers, p.name, None)
             if p_config and getattr(p_config, "api_key", None):
                 configured.append(f"- **{p.display_name}** (`{p.name}`)")
-                
+
         # Try to fetch local models from custom provider if configured
         local_models = []
         custom_cfg = getattr(cfg.providers, "custom", None)
@@ -65,7 +72,7 @@ def _list_models(current_model: str, config=None) -> str:
                             local_models = [f"  ↳ `custom/{m}`" for m in models[:5]]
             except Exception:
                 pass
-                
+
         # Try to fetch free models from OpenRouter if configured
         or_models = []
         or_cfg = getattr(cfg.providers, "openrouter", None)
@@ -78,20 +85,21 @@ def _list_models(current_model: str, config=None) -> str:
                         if "data" in data:
                             # Filter for free models only
                             free_models = [
-                                m["id"] for m in data["data"] 
-                                if m.get("pricing", {}).get("prompt", "") == "0" and 
-                                   m.get("pricing", {}).get("completion", "") == "0"
+                                m["id"]
+                                for m in data["data"]
+                                if m.get("pricing", {}).get("prompt", "") == "0"
+                                and m.get("pricing", {}).get("completion", "") == "0"
                             ]
                             or_models = [f"  ↳ `openrouter/{m}`" for m in free_models[:5]]
             except Exception:
                 # Fallback list if API fails
                 or_models = ["  ↳ `openrouter/stepfun/step-3.5-flash:free`"]
-                
+
         msg = [f"**Current Session Model:** `{current_model}`", ""]
         msg.append(f"**Default Global Model:** `{cfg.agents.defaults.model}`")
         msg.append("")
         msg.append("**Configured Providers:**")
-        
+
         if not configured:
             msg.append("- None")
         else:
@@ -101,17 +109,19 @@ def _list_models(current_model: str, config=None) -> str:
                     msg.extend(local_models)
                 elif "OpenRouter" in item and or_models:
                     msg.extend(or_models)
-                    
+
         msg.append("\n*To switch for this session: /model <provider/model>*")
         msg.append("*To switch permanently (globally): /model <provider/model> -g*")
         return "\n".join(msg)
     except Exception as e:
         return f"Could not list models: {e}"
 
+
 def _set_model(model_name: str, config_path=None) -> str:
     """Update the default model in config.json and return status."""
     try:
         from nanobot.config.loader import load_config, save_config
+
         cfg = load_config(config_path)
         old_model = cfg.agents.defaults.model
         cfg.agents.defaults.model = model_name
@@ -124,15 +134,17 @@ def _set_model(model_name: str, config_path=None) -> str:
     except Exception as e:
         raise RuntimeError(str(e))
 
+
 def _make_provider_for_model(model: str, config=None):
     from nanobot.config.loader import load_config
+
     cfg = config or load_config()
-    
+
     from nanobot.providers.custom_provider import CustomProvider
     from nanobot.providers.litellm_provider import LiteLLMProvider
     from nanobot.providers.openai_codex_provider import OpenAICodexProvider
     from nanobot.providers.registry import find_by_name
-    
+
     provider_name = cfg.get_provider_name(model)
     p = cfg.get_provider(model)
 
@@ -308,6 +320,7 @@ class AgentLoop:
         # Desktop tools (macOS only)
         if self.tools_config and self.tools_config.desktop.enabled:
             import platform
+
             if platform.system() == "Darwin":
                 if is_enabled("applescript"):
                     self.tools.register(AppleScriptTool())
@@ -318,9 +331,13 @@ class AgentLoop:
                 if is_enabled("desktop_action"):
                     self.tools.register(DesktopActionTool(send_callback=self.bus.publish_outbound))
                 if is_enabled("view_image"):
-                    self.tools.register(ViewImageTool())
+                    self.tools.register(ViewImageTool(workspace=self.workspace))
                 if is_enabled("send_image"):
-                    self.tools.register(SendImageTool(send_callback=self.bus.publish_outbound))
+                    self.tools.register(
+                        SendImageTool(
+                            send_callback=self.bus.publish_outbound, workspace=self.workspace
+                        )
+                    )
             else:
                 logger.warning("Desktop tools requested but platform is not macOS")
 
@@ -521,7 +538,7 @@ class AgentLoop:
         """Cancel all active tasks and subagents for the session."""
         session_key = msg.session_key
         logger.info("Handling /stop command for session {}", session_key)
-        
+
         # Pop and cancel main agent tasks
         tasks = self._active_tasks.pop(session_key, [])
         cancelled = 0
@@ -530,17 +547,17 @@ class AgentLoop:
                 logger.info("Cancelling active task: {}", t)
                 t.cancel()
                 cancelled += 1
-                
+
         # Pop and cancel subagent tasks
         sub_cancelled = await self.subagents.cancel_by_session(session_key)
-        
+
         # Wait for cancellations to complete
         if tasks:
             try:
                 await asyncio.wait(tasks, timeout=2.0)
             except asyncio.TimeoutError:
                 logger.warning("Timed out waiting for tasks to cancel for {}", session_key)
-        
+
         total = cancelled + sub_cancelled
         content = f"⏹ Stopped {total} task(s)." if total else "No active task to stop."
         await self.bus.publish_outbound(
@@ -671,7 +688,9 @@ class AgentLoop:
             self.sessions.save(session)
             self.sessions.invalidate(session.key)
             return OutboundMessage(
-                channel=msg.channel, chat_id=msg.chat_id, content="Session cleared (no memory save)."
+                channel=msg.channel,
+                chat_id=msg.chat_id,
+                content="Session cleared (no memory save).",
             )
         if cmd == "/help":
             return OutboundMessage(
@@ -685,21 +704,24 @@ class AgentLoop:
                 # List models
                 result = _list_models(self.model)
                 return OutboundMessage(channel=msg.channel, chat_id=msg.chat_id, content=result)
-            
+
             global_flag = "-g" in parts
             if global_flag:
                 parts.remove("-g")
-            
+
             new_model = " ".join(parts[1:])
             if "/" not in new_model:
-                return OutboundMessage(channel=msg.channel, chat_id=msg.chat_id, 
-                                      content="Usage: /model <provider/model> [-g]\nExample: /model openai/gpt-4o")
-            
+                return OutboundMessage(
+                    channel=msg.channel,
+                    chat_id=msg.chat_id,
+                    content="Usage: /model <provider/model> [-g]\nExample: /model openai/gpt-4o",
+                )
+
             try:
                 new_provider = _make_provider_for_model(new_model)
                 self.model = self.subagents.model = new_model
                 self.provider = self.subagents.provider = new_provider
-                
+
                 if global_flag:
                     try:
                         result = _set_model(new_model)
@@ -813,9 +835,10 @@ class AgentLoop:
                     for tc in content:
                         if tc.get("type") == "text":
                             import re
-                            matches = re.findall(r'\[image:\s*(.+?)\]', tc.get("text", ""))
+
+                            matches = re.findall(r"\[image:\s*(.+?)\]", tc.get("text", ""))
                             turn_paths.extend(matches)
-                    
+
                     img_idx = 0
                     for c in content:
                         if (
@@ -824,14 +847,14 @@ class AgentLoop:
                             and c["text"].startswith(ContextBuilder._RUNTIME_CONTEXT_TAG)
                         ):
                             continue  # Strip runtime context from multimodal messages
-                        
+
                         if c.get("type") == "image_url" and c.get("image_url", {}).get(
                             "url", ""
                         ).startswith("data:image/"):
                             # Map the image block to its path by index
                             img_path = turn_paths[img_idx] if img_idx < len(turn_paths) else None
                             img_idx += 1
-                            
+
                             if img_path:
                                 filtered.append({"type": "text", "text": f"[image: {img_path}]"})
                             else:
