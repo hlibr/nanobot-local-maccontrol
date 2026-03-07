@@ -96,13 +96,13 @@ class MessageTool(Tool):
                 if path.startswith("http://") or path.startswith("https://"):
                     resolved_media.append(path)
                 else:
-                    p = Path(path)
+                    p = Path(path).expanduser()
                     if not p.is_absolute():
                         if self._workspace:
                             p = self._workspace / p
                         else:
                             p = Path.cwd() / p
-                    resolved_media.append(str(p.expanduser().resolve()))
+                    resolved_media.append(str(p.resolve()))
 
         msg = OutboundMessage(
             channel=channel,

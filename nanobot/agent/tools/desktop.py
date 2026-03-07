@@ -283,13 +283,13 @@ class ViewImageTool(Tool):
 
     async def execute(self, path: str, **kwargs: Any) -> str:
         if not path.startswith("http://") and not path.startswith("https://"):
-            p = Path(path)
+            p = Path(path).expanduser()
             if not p.is_absolute():
                 if self._workspace:
                     p = self._workspace / p
                 else:
                     p = Path.cwd() / p
-            path = str(p.expanduser().resolve())
+            path = str(p.resolve())
 
         try:
             if path.startswith("http://") or path.startswith("https://"):
@@ -361,13 +361,13 @@ class SendImageTool(Tool):
         if not path.startswith("http://") and not path.startswith("https://"):
             from pathlib import Path
 
-            p = Path(path)
+            p = Path(path).expanduser()
             if not p.is_absolute():
                 if self._workspace:
                     p = self._workspace / p
                 else:
                     p = Path.cwd() / p
-            path = str(p.expanduser().resolve())
+            path = str(p.resolve())
 
         from nanobot.bus.events import OutboundMessage
 
