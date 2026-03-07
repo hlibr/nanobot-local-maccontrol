@@ -16,7 +16,7 @@ from nanobot.agent.context import ContextBuilder
 from nanobot.agent.memory import MemoryStore
 from nanobot.agent.subagent import SubagentManager
 from nanobot.agent.tools.cron import CronTool
-from nanobot.agent.tools.desktop import AppleScriptTool, CaptureScreenTool, DesktopActionTool, DesktopUIMetadataTool
+from nanobot.agent.tools.desktop import AppleScriptTool, CaptureScreenTool, DesktopActionTool, DesktopUIMetadataTool, SendImageTool, ViewImageTool
 from nanobot.agent.tools.filesystem import EditFileTool, ListDirTool, ReadFileTool, WriteFileTool
 from nanobot.agent.tools.message import MessageTool
 from nanobot.agent.tools.registry import ToolRegistry
@@ -316,7 +316,11 @@ class AgentLoop:
                 if is_enabled("get_ui_metadata"):
                     self.tools.register(DesktopUIMetadataTool())
                 if is_enabled("desktop_action"):
-                    self.tools.register(DesktopActionTool())
+                    self.tools.register(DesktopActionTool(send_callback=self.bus.publish_outbound))
+                if is_enabled("view_image"):
+                    self.tools.register(ViewImageTool())
+                if is_enabled("send_image"):
+                    self.tools.register(SendImageTool(send_callback=self.bus.publish_outbound))
             else:
                 logger.warning("Desktop tools requested but platform is not macOS")
 
@@ -345,7 +349,7 @@ class AgentLoop:
 
     def _set_tool_context(self, channel: str, chat_id: str, message_id: str | None = None) -> None:
         """Update context for all tools that need routing info."""
-        for name in ("message", "spawn", "cron"):
+        for name in ("message", "spawn", "cron", "send_image"):
             if tool := self.tools.get(name):
                 if hasattr(tool, "set_context"):
                     tool.set_context(channel, chat_id, *([message_id] if name == "message" else []))

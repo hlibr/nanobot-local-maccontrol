@@ -430,7 +430,7 @@ class TelegramChannel(BaseChannel):
                     else:
                         content_parts.append(f"[{media_type}: {file_path}]")
                 else:
-                    content_parts.append(f"[{media_type}: {file_path}]")
+                    content_parts.append(f"[image: {file_path}]")
 
                 logger.debug("Downloaded {} to {}", media_type, file_path)
             except Exception as e:

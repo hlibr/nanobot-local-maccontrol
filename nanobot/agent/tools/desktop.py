@@ -135,7 +135,7 @@ class DesktopUIMetadataTool(Tool):
                 set elementSummary to "Process: " & processName & " | Window: " & (name of win) & " | Window Rect: [" & (item 1 of winPos) & "," & (item 2 of winPos) & "," & (item 1 of winSize) & "," & (item 2 of winSize) & "]" & linefeed
                 
                 # Get common interactable elements: buttons, text fields, menu buttons, etc.
-                set roleList to {"AXButton", "AXTextField", "AXTextArea", "AXCheckBox", "AXRadioButton", "AXPopUpButton", "AXMenuButton", "AXStaticText"}
+                set roleList to {"AXButton", "AXTextField", "AXTextArea", "AXCheckBox", "AXRadioButton", "AXPopUpButton", "AXMenuButton", "AXStaticText", "AXImage", "AXLink", "AXList", "AXRow", "AXCell", "AXScrollArea", "AXWebArea"}
                 
                 set uiElements to entire contents of win
                 repeat with anElement in uiElements
@@ -172,6 +172,9 @@ class DesktopUIMetadataTool(Tool):
 
 class DesktopActionTool(Tool):
     """Tool to perform physical mouse/keyboard actions."""
+
+    def __init__(self, send_callback=None):
+        self.send_callback = send_callback
 
     @property
     def name(self) -> str:
@@ -246,3 +249,99 @@ class DesktopActionTool(Tool):
             return f"Successfully performed {action}."
         except Exception as e:
             return f"Error: {str(e)}"
+
+
+class ViewImageTool(Tool):
+    """Tool to view an image file and understand its content."""
+
+    @property
+    def name(self) -> str:
+        return "view_image"
+
+    @property
+    def description(self) -> str:
+        return "View an image file from the local filesystem. Returns the image for visual analysis by the agent."
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Absolute path to the image file"
+                }
+            },
+            "required": ["path"]
+        }
+
+    async def execute(self, path: str, **kwargs: Any) -> str:
+        try:
+            p = Path(path)
+            if not p.is_file():
+                return f"Error: File not found at {path}"
+            
+            import mimetypes
+            mime, _ = mimetypes.guess_type(path)
+            if not mime or not mime.startswith("image/"):
+                # Check if it has a common image extension even if mime guess failed
+                ext = p.suffix.lower()
+                if ext not in (".png", ".jpg", ".jpeg", ".webp", ".gif"):
+                    return f"Error: File is not an image (Mime: {mime}, Extension: {ext})"
+            
+            # The AgentLoop will see this path and re-hydrate it into vision context
+            return f"[image: {path}]"
+        except Exception as e:
+            return f"Error viewing image: {str(e)}"
+
+
+class SendImageTool(Tool):
+    """Tool to send an image to the user."""
+
+    def __init__(self, send_callback=None):
+        self._send_callback = send_callback
+        self._default_channel = ""
+        self._default_chat_id = ""
+
+    def set_context(self, channel: str, chat_id: str, **kwargs) -> None:
+        self._default_channel = channel
+        self._default_chat_id = chat_id
+
+    @property
+    def name(self) -> str:
+        return "send_image"
+
+    @property
+    def description(self) -> str:
+        return "Send an image file from the local filesystem to the user on Telegram."
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Absolute path to the image file"
+                },
+                "caption": {
+                    "type": "string",
+                    "description": "Optional caption for the image"
+                }
+            },
+            "required": ["path"]
+        }
+
+    async def execute(self, path: str, caption: str = "", **kwargs: Any) -> str:
+        if not self._send_callback:
+            return "Error: Send callback not configured"
+        
+        from nanobot.bus.events import OutboundMessage
+        msg = OutboundMessage(
+            channel=self._default_channel,
+            chat_id=self._default_chat_id,
+            content=caption or "Image attached",
+            media=[path]
+        )
+        await self._send_callback(msg)
+        return f"Image sent to user: {path}"

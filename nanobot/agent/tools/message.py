@@ -42,7 +42,11 @@ class MessageTool(Tool):
 
     @property
     def description(self) -> str:
-        return "Send a message to the user. Use this when you want to communicate something."
+        return (
+            "Send a message to the user. "
+            "Use this to communicate information, respond to the user, or send files and images. "
+            "To send a file or image, include its absolute path in the 'media' array."
+        )
 
     @property
     def parameters(self) -> dict[str, Any]:

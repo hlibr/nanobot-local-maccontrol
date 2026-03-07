@@ -82,7 +82,7 @@ class ContextBuilder:
     def _hydrate_image_refs(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Re-inject base64 image data for [image_ref:path] markers in history."""
         import re
-        _REF_PATTERN = re.compile(r'^\[image_ref:(.+)\]$')
+        _REF_PATTERN = re.compile(r'\[image:\s*(.+?)\]')
 
         result = []
         for msg in history:
