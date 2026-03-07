@@ -71,12 +71,17 @@ class ContextBuilder:
         ]
 
     def _build_user_content(self, text: str, media: list[str] | None) -> str | list[dict[str, Any]]:
-        """Build user message content with optional base64-encoded images."""
+        """Build user message content with optional base64-encoded images or URLs."""
         if not media:
             return text
 
         images = []
         for path in media:
+            if path.startswith("http://") or path.startswith("https://"):
+                # Pass URLs directly to LiteLLM-enabled providers
+                images.append({"type": "image_url", "image_url": {"url": path}})
+                continue
+
             p = Path(path)
             mime, _ = mimetypes.guess_type(path)
             if not p.is_file() or not mime or not mime.startswith("image/"):
@@ -90,7 +95,7 @@ class ContextBuilder:
 
     @staticmethod
     def _hydrate_image_refs(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Re-inject base64 image data for [image_ref:path] markers in history."""
+        """Re-inject base64 image data or URLs for [image:path] markers in history."""
         import re
         _REF_PATTERN = re.compile(r'\[image:\s*(.+?)\]')
 
@@ -109,21 +114,32 @@ class ContextBuilder:
                     m = _REF_PATTERN.search(text)
                     if m:
                         img_path = m.group(1)
-                        p = Path(img_path)
-                        mime, _ = mimetypes.guess_type(img_path)
-                        if p.is_file() and mime and mime.startswith("image/"):
-                            # Filter out the tag from the text block
+                        is_url = img_path.startswith("http://") or img_path.startswith("https://")
+                        
+                        if is_url:
+                            # Re-add as URL
                             cleaned_text = _REF_PATTERN.sub('', text).strip()
                             if cleaned_text:
                                 new_content.append({"type": "text", "text": cleaned_text})
-                            
-                            b64 = base64.b64encode(p.read_bytes()).decode()
-                            new_content.append({
-                                "type": "image_url",
-                                "image_url": {"url": f"data:{mime};base64,{b64}"}
-                            })
+                            new_content.append({"type": "image_url", "image_url": {"url": img_path}})
                             changed = True
                             continue
+                        else:
+                            p = Path(img_path)
+                            mime, _ = mimetypes.guess_type(img_path)
+                            if p.is_file() and mime and mime.startswith("image/"):
+                                # Filter out the tag from the text block
+                                cleaned_text = _REF_PATTERN.sub('', text).strip()
+                                if cleaned_text:
+                                    new_content.append({"type": "text", "text": cleaned_text})
+                                
+                                b64 = base64.b64encode(p.read_bytes()).decode()
+                                new_content.append({
+                                    "type": "image_url",
+                                    "image_url": {"url": f"data:{mime};base64,{b64}"}
+                                })
+                                changed = True
+                                continue
                 new_content.append(block)
 
             if changed:

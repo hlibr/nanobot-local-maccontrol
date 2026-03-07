@@ -277,6 +277,10 @@ class ViewImageTool(Tool):
 
     async def execute(self, path: str, **kwargs: Any) -> str:
         try:
+            if path.startswith("http://") or path.startswith("https://"):
+                # Always allow URLs to be viewed
+                return f"[image: {path}]"
+
             p = Path(path)
             if not p.is_file():
                 return f"Error: File not found at {path}"
