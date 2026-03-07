@@ -82,20 +82,23 @@ class ExecTool(Tool):
                 env=env,
             )
             
-            try:
-                stdout, stderr = await asyncio.wait_for(
-                    process.communicate(),
-                    timeout=self.timeout
-                )
-            except asyncio.TimeoutError:
-                process.kill()
-                # Wait for the process to fully terminate so pipes are
-                # drained and file descriptors are released.
+            if self.timeout <= 0:
+                stdout, stderr = await process.communicate()
+            else:
                 try:
-                    await asyncio.wait_for(process.wait(), timeout=5.0)
+                    stdout, stderr = await asyncio.wait_for(
+                        process.communicate(),
+                        timeout=self.timeout
+                    )
                 except asyncio.TimeoutError:
-                    pass
-                return f"Error: Command timed out after {self.timeout} seconds"
+                    process.kill()
+                    # Wait for the process to fully terminate so pipes are
+                    # drained and file descriptors are released.
+                    try:
+                        await asyncio.wait_for(process.wait(), timeout=5.0)
+                    except asyncio.TimeoutError:
+                        pass
+                    return f"Error: Command timed out after {self.timeout} seconds"
             
             output_parts = []
             
