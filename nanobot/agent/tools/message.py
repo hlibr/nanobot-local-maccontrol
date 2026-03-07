@@ -1,5 +1,6 @@
 """Message tool for sending messages to users."""
 
+from pathlib import Path
 from typing import Any, Awaitable, Callable
 
 from nanobot.agent.tools.base import Tool
@@ -15,12 +16,14 @@ class MessageTool(Tool):
         default_channel: str = "",
         default_chat_id: str = "",
         default_message_id: str | None = None,
+        workspace: Path | None = None,
     ):
         self._send_callback = send_callback
         self._default_channel = default_channel
         self._default_chat_id = default_chat_id
         self._default_message_id = default_message_id
         self._sent_in_turn: bool = False
+        self._workspace = workspace
 
     def set_context(self, channel: str, chat_id: str, message_id: str | None = None) -> None:
         """Set the current message context."""
@@ -53,25 +56,19 @@ class MessageTool(Tool):
         return {
             "type": "object",
             "properties": {
-                "content": {
-                    "type": "string",
-                    "description": "The message content to send"
-                },
+                "content": {"type": "string", "description": "The message content to send"},
                 "channel": {
                     "type": "string",
-                    "description": "Optional: target channel (telegram, discord, etc.)"
+                    "description": "Optional: target channel (telegram, discord, etc.)",
                 },
-                "chat_id": {
-                    "type": "string",
-                    "description": "Optional: target chat/user ID"
-                },
+                "chat_id": {"type": "string", "description": "Optional: target chat/user ID"},
                 "media": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Optional: list of file paths to attach (images, audio, documents)"
-                }
+                    "description": "Optional: list of file paths to attach (images, audio, documents)",
+                },
             },
-            "required": ["content"]
+            "required": ["content"],
         }
 
     async def execute(
@@ -81,7 +78,7 @@ class MessageTool(Tool):
         chat_id: str | None = None,
         message_id: str | None = None,
         media: list[str] | None = None,
-        **kwargs: Any
+        **kwargs: Any,
     ) -> str:
         channel = channel or self._default_channel
         chat_id = chat_id or self._default_chat_id
@@ -93,21 +90,35 @@ class MessageTool(Tool):
         if not self._send_callback:
             return "Error: Message sending not configured"
 
+        resolved_media = []
+        if media:
+            for path in media:
+                if path.startswith("http://") or path.startswith("https://"):
+                    resolved_media.append(path)
+                else:
+                    p = Path(path)
+                    if not p.is_absolute():
+                        if self._workspace:
+                            p = self._workspace / p
+                        else:
+                            p = Path.cwd() / p
+                    resolved_media.append(str(p.expanduser().resolve()))
+
         msg = OutboundMessage(
             channel=channel,
             chat_id=chat_id,
             content=content,
-            media=media or [],
+            media=resolved_media,
             metadata={
                 "message_id": message_id,
-            }
+            },
         )
 
         try:
             await self._send_callback(msg)
             if channel == self._default_channel and chat_id == self._default_chat_id:
                 self._sent_in_turn = True
-            media_info = f" with {len(media)} attachments" if media else ""
+            media_info = f" with {len(resolved_media)} attachments" if resolved_media else ""
             return f"Message sent to {channel}:{chat_id}{media_info}"
         except Exception as e:
             return f"Error sending message: {str(e)}"

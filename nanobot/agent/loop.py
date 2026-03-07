@@ -311,7 +311,9 @@ class AgentLoop:
 
         # Communication tools
         if is_enabled("message"):
-            self.tools.register(MessageTool(send_callback=self.bus.publish_outbound))
+            self.tools.register(
+                MessageTool(send_callback=self.bus.publish_outbound, workspace=self.workspace)
+            )
         if is_enabled("spawn"):
             self.tools.register(SpawnTool(manager=self.subagents))
         if is_enabled("cron") and self.cron_service:
