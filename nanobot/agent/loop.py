@@ -444,6 +444,17 @@ class AgentLoop:
                     messages = self.context.add_tool_result(
                         messages, tool_call.id, tool_call.name, result
                     )
+
+                    # Auto-Vision: detect [image: path] tags and inject as a synthetic User message
+                    if isinstance(result, str) and "[image:" in result:
+                        image_matches = re.findall(r"\[image:\s*(.+?)\]", result)
+                        if image_matches:
+                            logger.info("Injecting {} image(s) into vision context", len(image_matches))
+                            messages = self.context.add_user_message(
+                                messages,
+                                "I have attached the screenshot(s) or image(s) from the tool result above.",
+                                media=[m.strip() for m in image_matches]
+                            )
             else:
                 clean = self._strip_think(response.content)
                 # Don't persist error responses to session history — they can

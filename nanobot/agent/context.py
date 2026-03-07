@@ -121,60 +121,23 @@ class ContextBuilder:
         messages: list[dict[str, Any]],
         tool_call_id: str,
         tool_name: str,
-        result: str | list[dict[str, Any]],
+        result: str,
     ) -> list[dict[str, Any]]:
-        """Add a tool result to the message list. Supports multimodal [image: path] tags."""
-        import base64
-        import mimetypes
-        import re
-
-        content: Any = result
-
-        if isinstance(result, str):
-            # Detect [image: path] markers
-            pattern = re.compile(r"\[image:\s*(.+?)\]")
-            matches = list(pattern.finditer(result))
-            
-            if matches:
-                content_blocks = []
-                last_pos = 0
-                for match in matches:
-                    # Add preceding text
-                    txt = result[last_pos:match.start()].strip()
-                    if txt:
-                        content_blocks.append({"type": "text", "text": txt})
-                    
-                    # Add image block
-                    img_path = match.group(1).strip()
-                    p = Path(img_path)
-                    if p.is_file():
-                        mime, _ = mimetypes.guess_type(img_path)
-                        mime = mime or "image/png"
-                        if mime.startswith("image/"):
-                            try:
-                                b64 = base64.b64encode(p.read_bytes()).decode()
-                                content_blocks.append({
-                                    "type": "image_url",
-                                    "image_url": {"url": f"data:{mime};base64,{b64}"}
-                                })
-                            except Exception as e:
-                                content_blocks.append({"type": "text", "text": f"(Error loading image: {e})"})
-                        else:
-                            content_blocks.append({"type": "text", "text": f"(Error: File is not an image: {img_path})"})
-                    else:
-                        content_blocks.append({"type": "text", "text": f"(Error: Image not found: {img_path})"})
-                    
-                    last_pos = match.end()
-                
-                # Add remaining text
-                rem = result[last_pos:].strip()
-                if rem:
-                    content_blocks.append({"type": "text", "text": rem})
-                
-                content = content_blocks
-
+        """Add a tool result to the message list. Content MUST be a string for API compliance."""
         messages.append(
-            {"role": "tool", "tool_call_id": tool_call_id, "name": tool_name, "content": content}
+            {"role": "tool", "tool_call_id": tool_call_id, "name": tool_name, "content": result}
+        )
+        return messages
+
+    def add_user_message(
+        self,
+        messages: list[dict[str, Any]],
+        content: str,
+        media: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Add a user message to the message list. Supports multimodal media."""
+        messages.append(
+            {"role": "user", "content": self._build_user_content(content, media)}
         )
         return messages
 
