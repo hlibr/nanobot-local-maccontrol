@@ -54,6 +54,19 @@ class CustomProvider(LLMProvider):
         except asyncio.CancelledError:
             raise
         except Exception as e:
+            # Check for vision-unsupported errors
+            err_str = str(e).lower()
+            if any(kw in err_str for kw in ("image input", "multimodal", "image_url", "vision")):
+                stripped_messages = self._strip_vision_content(kwargs["messages"])
+                if stripped_messages != kwargs["messages"]:
+                    from loguru import logger
+                    logger.warning("Custom provider model {} appears to not support images. Retrying without images...", target_model)
+                    kwargs["messages"] = stripped_messages
+                    try:
+                        return self._parse(await self._client.chat.completions.create(**kwargs))
+                    except Exception as retry_e:
+                        return LLMResponse(content=f"Error after image-strip retry: {retry_e}", finish_reason="error")
+
             return LLMResponse(content=f"Error: {e}", finish_reason="error")
 
     def _parse(self, response: Any) -> LLMResponse:

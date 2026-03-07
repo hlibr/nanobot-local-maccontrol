@@ -248,6 +248,21 @@ class LiteLLMProvider(LLMProvider):
         except asyncio.CancelledError:
             raise
         except Exception as e:
+            # Check if this looks like a vision-unsupported error (e.g. OpenRouter 404 or OpenAI 400)
+            err_str = str(e).lower()
+            if any(kw in err_str for kw in ("image input", "multimodal", "image_url", "vision")):
+                # Check if we actually have images to strip
+                stripped_messages = self._strip_vision_content(kwargs["messages"])
+                if stripped_messages != kwargs["messages"]:
+                    from loguru import logger
+                    logger.warning("Model {} (resolved as {}) appears to not support images. Retrying without images...", original_model, model)
+                    kwargs["messages"] = stripped_messages
+                    try:
+                        response = await acompletion(**kwargs)
+                        return self._parse_response(response)
+                    except Exception as retry_e:
+                        return LLMResponse(content=f"Error after image-strip retry: {retry_e}", finish_reason="error")
+            
             # Return error as content for graceful handling
             return LLMResponse(
                 content=f"Error calling LLM: {str(e)}",

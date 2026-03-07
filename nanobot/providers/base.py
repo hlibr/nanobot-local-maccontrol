@@ -87,6 +87,41 @@ class LLMProvider(ABC):
             result.append(msg)
         return result
 
+    @staticmethod
+    def _strip_vision_content(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Remove image blocks from multimodal messages and replace with text placeholders.
+        
+        Useful for retrying a request when a model doesn't support images.
+        """
+        result = []
+        for msg in messages:
+            content = msg.get("content")
+            if not isinstance(content, list):
+                result.append(msg)
+                continue
+                
+            clean_content = []
+            has_images = False
+            for block in content:
+                if isinstance(block, dict) and block.get("type") == "image_url":
+                    has_images = True
+                    url = block.get("image_url", {}).get("url", "")
+                    if url.startswith("data:"):
+                        # Just say it's an attached image
+                        clean_content.append({"type": "text", "text": "[Attached Image - Removed for non-vision model]"})
+                    else:
+                        clean_content.append({"type": "text", "text": f"[Image URL: {url} - Removed for non-vision model]"})
+                else:
+                    clean_content.append(block)
+            
+            if has_images:
+                clean_msg = dict(msg)
+                clean_msg["content"] = clean_content
+                result.append(clean_msg)
+            else:
+                result.append(msg)
+        return result
+
     @abstractmethod
     async def chat(
         self,
