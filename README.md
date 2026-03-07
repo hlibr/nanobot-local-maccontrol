@@ -36,6 +36,8 @@ The agent remembers the images that it saw (base nanobot forgets them)
 
 "/model" command to list available providers and models, and switch the current model on-the-fly
 
+view_image and send_image tools
+
 ## Config changes:
 
 MLX transcription (for openai providers set provider to openai, and set apiKey if needed):
@@ -70,7 +72,9 @@ Enable desktop control tools:
       "applescript",
       "capture_screen",
       "get_ui_metadata",
-      "desktop_action"
+      "desktop_action",
+      "view_image",
+      "send_image"
     ]
   }
 
