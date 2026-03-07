@@ -43,17 +43,20 @@ class ContextBuilder:
     ) -> list[dict[str, Any]]:
         """Build the complete message list for an LLM call."""
         runtime_ctx = self._build_runtime_context(channel, chat_id)
-        
+
         # Extract [image: path] tags from the message text and add to media list
         import re
-        extracted_media = re.findall(r'\[image:\s*(.+?)\]', current_message)
+
+        extracted_media = re.findall(r"\[image:\s*(.+?)\]", current_message)
         clean_message = current_message
         if extracted_media:
             media = (media or []) + [m.strip() for m in extracted_media]
             # Remove the tags from the text so the LLM doesn't get confused by them
-            clean_message = re.sub(r'\[image:\s*.+?\]', '', current_message).strip()
+            clean_message = re.sub(r"\[image:\s*.+?\]", "", current_message).strip()
 
-        user_content = await self._build_user_content(clean_message, media, vision_supported=vision_supported)
+        user_content = await self._build_user_content(
+            clean_message, media, vision_supported=vision_supported
+        )
 
         # Merge runtime context and user content into a single user message
         # to avoid consecutive same-role messages that some providers reject.
@@ -63,7 +66,9 @@ class ContextBuilder:
             merged = [{"type": "text", "text": runtime_ctx}] + user_content
 
         # Re-hydrate image references in history so the model can "see" them again
-        hydrated_history = await self._hydrate_image_refs(history, vision_supported=vision_supported)
+        hydrated_history = await self._hydrate_image_refs(
+            history, vision_supported=vision_supported
+        )
 
         return [
             {"role": "system", "content": self.build_system_prompt(skill_names)},
@@ -75,39 +80,47 @@ class ContextBuilder:
         """Fetch image from URL and return (mime, b64_data). Follows redirects, handles errors."""
         import httpx
         from loguru import logger
+
         try:
             async with httpx.AsyncClient(follow_redirects=True, timeout=10.0) as client:
                 resp = await client.get(url)
                 if resp.status_code != 200:
                     logger.warning("Failed to fetch image from {}: HTTP {}", url, resp.status_code)
                     return None
-                
+
                 mime = resp.headers.get("Content-Type", "").split(";")[0].strip()
                 if not mime.startswith("image/"):
                     # Try to guess from URL if header is missing/generic/misconfigured
                     mime, _ = mimetypes.guess_type(url)
                     if not mime or not mime.startswith("image/"):
-                        logger.warning("Fetched content from {} is not an image (MIME: {})", url, mime or "unknown")
+                        logger.warning(
+                            "Fetched content from {} is not an image (MIME: {})",
+                            url,
+                            mime or "unknown",
+                        )
                         return "invalid_type"
-                
+
                 data = resp.content
                 if len(data) > 10 * 1024 * 1024:
                     logger.warning("Image from {} is too large ({} bytes)", url, len(data))
                     return "too_large"
-                
+
                 b64 = base64.b64encode(data).decode()
                 return mime, b64
         except Exception as e:
             logger.warning("Error fetching image from {}: {}", url, e)
             return "error"
 
-    async def _build_user_content(self, text: str, media: list[str] | None, vision_supported: bool = True) -> str | list[dict[str, Any]]:
+    async def _build_user_content(
+        self, text: str, media: list[str] | None, vision_supported: bool = True
+    ) -> str | list[dict[str, Any]]:
         """Build user message content with base64-encoded images. URLs are fetched and converted."""
         if not media:
             return text
 
         if not vision_supported:
             import os
+
             placeholders = []
             for path in media:
                 name = path.split("/")[-1] if "/" in path else path
@@ -120,30 +133,76 @@ class ContextBuilder:
                 result = await self._fetch_image_as_b64(path)
                 if isinstance(result, tuple):
                     mime, b64 = result
-                    images.append({"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}})
+                    images.append(
+                        {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}}
+                    )
                 elif result == "invalid_type":
-                    images.append({"type": "text", "text": f"[System: The URL {path} is not an image (e.g. it's a webpage)]"})
+                    images.append(
+                        {
+                            "type": "text",
+                            "text": f"[System: The URL {path} is not an image (e.g. it's a webpage)]",
+                        }
+                    )
                 elif result == "too_large":
-                    images.append({"type": "text", "text": f"[System: The image at {path} is too large (>10MB)]"})
+                    images.append(
+                        {
+                            "type": "text",
+                            "text": f"[System: The image at {path} is too large (>10MB)]",
+                        }
+                    )
                 else:
-                    images.append({"type": "text", "text": f"[System: Image load failed from {path}]"})
+                    images.append(
+                        {"type": "text", "text": f"[System: Image load failed from {path}]"}
+                    )
                 continue
 
             p = Path(path)
             mime, _ = mimetypes.guess_type(path)
             if not p.is_file() or not mime or not mime.startswith("image/"):
                 continue
-            b64 = base64.b64encode(p.read_bytes()).decode()
-            images.append({"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}})
+
+            # Convert WebP and other unsupported formats to PNG for vision models
+            image_data = p.read_bytes()
+            output_mime = mime
+            if mime in ("image/webp", "image/bmp", "image/tiff"):
+                try:
+                    from PIL import Image
+                    import io
+
+                    img = Image.open(io.BytesIO(image_data))
+                    if img.mode in ("RGBA", "LA", "P"):
+                        # Keep transparency for PNG
+                        output_format = "PNG"
+                        output_mime = "image/png"
+                    else:
+                        # Convert to RGB for JPEG
+                        output_format = "JPEG"
+                        output_mime = "image/jpeg"
+                        img = img.convert("RGB")
+
+                    buffer = io.BytesIO()
+                    img.save(buffer, format=output_format, quality=95)
+                    image_data = buffer.getvalue()
+                except Exception as e:
+                    logger.warning("Failed to convert {} to PNG/JPEG: {}", path, e)
+                    # Fall back to original format
+
+            b64 = base64.b64encode(image_data).decode()
+            images.append(
+                {"type": "image_url", "image_url": {"url": f"data:{output_mime};base64,{b64}"}}
+            )
 
         if not images:
             return text
         return images + [{"type": "text", "text": text}]
 
-    async def _hydrate_image_refs(self, history: list[dict[str, Any]], vision_supported: bool = True) -> list[dict[str, Any]]:
+    async def _hydrate_image_refs(
+        self, history: list[dict[str, Any]], vision_supported: bool = True
+    ) -> list[dict[str, Any]]:
         """Re-inject base64 image data for [image:path] markers in history."""
         import re
-        _REF_PATTERN = re.compile(r'\[image:\s*(.+?)\]')
+
+        _REF_PATTERN = re.compile(r"\[image:\s*(.+?)\]")
 
         result = []
         for msg in history:
@@ -161,7 +220,7 @@ class ContextBuilder:
                     if m:
                         img_path = m.group(1)
                         img_url = None
-                        
+
                         if not vision_supported:
                             new_content.append({"type": "text", "text": f"[Image: {img_path}]"})
                             changed = True
@@ -173,16 +232,31 @@ class ContextBuilder:
                                 mime, b64 = result
                                 img_url = f"data:{mime};base64,{b64}"
                             elif result == "invalid_type":
-                                new_content.append({"type": "text", "text": f"[System: History image {img_path} is not an image (e.g. it's a webpage)]"})
+                                new_content.append(
+                                    {
+                                        "type": "text",
+                                        "text": f"[System: History image {img_path} is not an image (e.g. it's a webpage)]",
+                                    }
+                                )
                                 changed = True
                                 continue
                             elif result == "too_large":
-                                new_content.append({"type": "text", "text": f"[System: History image {img_path} is too large (>10MB)]"})
+                                new_content.append(
+                                    {
+                                        "type": "text",
+                                        "text": f"[System: History image {img_path} is too large (>10MB)]",
+                                    }
+                                )
                                 changed = True
                                 continue
                             else:
                                 # Keep the text error node
-                                new_content.append({"type": "text", "text": f"[System: History image load failed: {img_path}]"})
+                                new_content.append(
+                                    {
+                                        "type": "text",
+                                        "text": f"[System: History image load failed: {img_path}]",
+                                    }
+                                )
                                 changed = True
                                 continue
                         else:
@@ -196,14 +270,11 @@ class ContextBuilder:
 
                         if img_url:
                             # Filter out the tag from the text block
-                            cleaned_text = _REF_PATTERN.sub('', text).strip()
+                            cleaned_text = _REF_PATTERN.sub("", text).strip()
                             if cleaned_text:
                                 new_content.append({"type": "text", "text": cleaned_text})
-                            
-                            new_content.append({
-                                "type": "image_url",
-                                "image_url": {"url": img_url}
-                            })
+
+                            new_content.append({"type": "image_url", "image_url": {"url": img_url}})
                             changed = True
                             continue
                 new_content.append(block)
@@ -236,10 +307,10 @@ class ContextBuilder:
     ) -> list[dict[str, Any]]:
         """Add a user message to the message list. Supports multimodal media."""
         # Await the content building since it may involve async image fetching
-        user_content = await self._build_user_content(content, media, vision_supported=vision_supported)
-        messages.append(
-            {"role": "user", "content": user_content}
+        user_content = await self._build_user_content(
+            content, media, vision_supported=vision_supported
         )
+        messages.append({"role": "user", "content": user_content})
         return messages
 
     def add_assistant_message(
