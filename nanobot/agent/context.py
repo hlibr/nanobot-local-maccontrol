@@ -200,15 +200,17 @@ class ContextBuilder:
         )
         return messages
 
-    def add_user_message(
+    async def add_user_message(
         self,
         messages: list[dict[str, Any]],
         content: str,
         media: list[str] | None = None,
     ) -> list[dict[str, Any]]:
         """Add a user message to the message list. Supports multimodal media."""
+        # Await the content building since it may involve async image fetching
+        user_content = await self._build_user_content(content, media)
         messages.append(
-            {"role": "user", "content": self._build_user_content(content, media)}
+            {"role": "user", "content": user_content}
         )
         return messages
 

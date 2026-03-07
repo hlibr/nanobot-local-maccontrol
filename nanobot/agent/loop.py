@@ -460,7 +460,7 @@ class AgentLoop:
                     logger.info("Injecting {} image(s) into vision context", len(images_to_inject))
                     # Include the tags in the text so history re-hydration can find them later
                     tags = " ".join([f"[image: {m}]" for m in images_to_inject])
-                    messages = self.context.add_user_message(
+                    messages = await self.context.add_user_message(
                         messages,
                         f"I have attached the images/screenshots from the tool results: {tags}",
                         media=images_to_inject
