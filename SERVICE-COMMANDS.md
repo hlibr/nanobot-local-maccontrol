@@ -1,4 +1,5 @@
 Useful Commands
+
 Check Status:
 
 bash
@@ -9,12 +10,14 @@ Stop Manually:
 
 bash
 launchctl unload ~/Library/LaunchAgents/com.hlibr.nanobot.plist
+
 Restart Manually:
 
 bash
 launchctl unload ~/Library/LaunchAgents/com.hlibr.nanobot.plist
 launchctl load ~/Library/LaunchAgents/com.hlibr.nanobot.plist
+
 Tail Logs:
 
 bash
-tail -f ~/.nanobot/logs/gateway.out.log
+tail -f ~/.nanobot/logs/gateway.out.log ~/.nanobot/logs/gateway.err.log
