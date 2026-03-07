@@ -173,8 +173,8 @@ class LiteLLMProvider(LLMProvider):
         for msg in messages:
             clean = {k: v for k, v in msg.items() if k in allowed}
             # Strict providers require "content" even when assistant only has tool_calls
-            if clean.get("role") == "assistant" and "content" not in clean:
-                clean["content"] = None
+            if clean.get("role") == "assistant" and ("content" not in clean or clean["content"] is None):
+                clean["content"] = ""
             sanitized.append(clean)
         return sanitized
 
