@@ -42,7 +42,17 @@ class ContextBuilder:
     ) -> list[dict[str, Any]]:
         """Build the complete message list for an LLM call."""
         runtime_ctx = self._build_runtime_context(channel, chat_id)
-        user_content = self._build_user_content(current_message, media)
+        
+        # Extract [image: path] tags from the message text and add to media list
+        import re
+        extracted_media = re.findall(r'\[image:\s*(.+?)\]', current_message)
+        clean_message = current_message
+        if extracted_media:
+            media = (media or []) + [m.strip() for m in extracted_media]
+            # Remove the tags from the text so the LLM doesn't get confused by them
+            clean_message = re.sub(r'\[image:\s*.+?\]', '', current_message).strip()
+
+        user_content = self._build_user_content(clean_message, media)
 
         # Merge runtime context and user content into a single user message
         # to avoid consecutive same-role messages that some providers reject.
@@ -95,12 +105,18 @@ class ContextBuilder:
             changed = False
             for block in content:
                 if block.get("type") == "text":
-                    m = _REF_PATTERN.search(block.get("text", ""))
+                    text = block.get("text", "")
+                    m = _REF_PATTERN.search(text)
                     if m:
                         img_path = m.group(1)
                         p = Path(img_path)
                         mime, _ = mimetypes.guess_type(img_path)
                         if p.is_file() and mime and mime.startswith("image/"):
+                            # Filter out the tag from the text block
+                            cleaned_text = _REF_PATTERN.sub('', text).strip()
+                            if cleaned_text:
+                                new_content.append({"type": "text", "text": cleaned_text})
+                            
                             b64 = base64.b64encode(p.read_bytes()).decode()
                             new_content.append({
                                 "type": "image_url",
