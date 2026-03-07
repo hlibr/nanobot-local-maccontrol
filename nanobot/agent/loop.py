@@ -70,6 +70,40 @@ def _set_model(model_name: str, config_path=None) -> str:
     except Exception as e:
         raise RuntimeError(str(e))
 
+def _make_provider_for_model(model: str, config=None):
+    from nanobot.config.loader import load_config
+    cfg = config or load_config()
+    
+    from nanobot.providers.custom_provider import CustomProvider
+    from nanobot.providers.litellm_provider import LiteLLMProvider
+    from nanobot.providers.openai_codex_provider import OpenAICodexProvider
+    from nanobot.providers.registry import find_by_name
+    
+    provider_name = cfg.get_provider_name(model)
+    p = cfg.get_provider(model)
+
+    if provider_name == "openai_codex" or model.startswith("openai-codex/"):
+        return OpenAICodexProvider(default_model=model)
+
+    if provider_name == "custom":
+        return CustomProvider(
+            api_key=p.api_key if p else "no-key",
+            api_base=cfg.get_api_base(model) or "http://localhost:8000/v1",
+            default_model=model,
+        )
+
+    spec = find_by_name(provider_name)
+    if not model.startswith("bedrock/") and not (p and p.api_key) and not (spec and spec.is_oauth):
+        raise RuntimeError(f"No API key configured for provider '{provider_name}'.")
+
+    return LiteLLMProvider(
+        api_key=p.api_key if p else None,
+        api_base=cfg.get_api_base(model),
+        default_model=model,
+        extra_headers=p.extra_headers if p else None,
+        provider_name=provider_name,
+    )
+
 
 class AgentLoop:
     """
@@ -539,14 +573,21 @@ class AgentLoop:
                 return OutboundMessage(channel=msg.channel, chat_id=msg.chat_id, 
                                       content="Usage: /model <provider/model> [-g]\nExample: /model openai/gpt-4o")
             
-            self.model = self.subagents.model = new_model
-            if global_flag:
-                try:
-                    result = _set_model(new_model)
-                except RuntimeError as e:
-                    result = f"❌ {e}"
-            else:
-                result = f"✅ Model: {new_model} (session)"
+            try:
+                new_provider = _make_provider_for_model(new_model)
+                self.model = self.subagents.model = new_model
+                self.provider = self.subagents.provider = new_provider
+                
+                if global_flag:
+                    try:
+                        result = _set_model(new_model)
+                    except RuntimeError as e:
+                        result = f"❌ {e}"
+                else:
+                    result = f"✅ Model: {new_model} (session)"
+            except Exception as e:
+                result = f"❌ Error switching model: {e}"
+
             return OutboundMessage(channel=msg.channel, chat_id=msg.chat_id, content=result)
 
         unconsolidated = len(session.messages) - session.last_consolidated
