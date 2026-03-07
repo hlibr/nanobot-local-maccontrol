@@ -1,0 +1,3 @@
+rror: Error code: 400 - {'error': {'message': "No models loaded. Please load a model in the developer page or use the 'lms load' command.", 'type': 'invalid_request_error', 'param': 'model', 'code': None}}
+
+
