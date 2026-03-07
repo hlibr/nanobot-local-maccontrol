@@ -18,6 +18,62 @@
 
 📏 Real-time line count: run `bash core_agent_lines.sh` to verify anytime.
 
+# Comparison with base Nanobot:
+
+This version is meant to fully control your local macbook.
+
+The system prompt is fully stripped, except what's in your SOUL.md
+
+Memories do not work (temporarily).
+
+Added "/reset" command that resets your current session.
+
+Implemented tools for mac computer control: get_ui_metadata, applescript, capture_screen, desktop_action
+
+Local transcription support with MLX-Whisper or any OpenAI transcription endpoint
+
+The agent remembers the images that it saw (base nanobot forgets them)
+
+"/model" command to list available providers and models, and switch the current model on-the-fly
+
+## Config changes:
+
+MLX transcription (for openai providers set provider to openai, and set apiKey if needed):
+
+  "transcription": {
+    "enabled": true,
+    "provider": "mlx",
+    "model": "mlx-community/whisper-large-v3-mlx",
+    "preload": true
+  }
+
+Enable desktop control tools:
+
+  "tools": {
+    "desktop": {
+      "enabled": true
+    }
+  }
+
+(Optional) tool enable-list:
+
+  "tools": {
+    "enabled": [
+      "web_search",
+      "cron",
+      "spawn",
+      "exec",
+      "read_file",
+      "write_file",
+      "edit_file",
+      "list_dir",
+      "applescript",
+      "capture_screen",
+      "get_ui_metadata",
+      "desktop_action"
+    ]
+  }
+
 ## 📢 News
 
 - **2026-02-28** 🚀 Released **v0.1.4.post3** — cleaner context, hardened session history, and smarter agent. Please see [release notes](https://github.com/HKUDS/nanobot/releases/tag/v0.1.4.post3) for details.
