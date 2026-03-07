@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from typing import Any
 
@@ -38,6 +39,8 @@ class CustomProvider(LLMProvider):
             kwargs.update(tools=tools, tool_choice="auto")
         try:
             return self._parse(await self._client.chat.completions.create(**kwargs))
+        except asyncio.CancelledError:
+            raise
         except Exception as e:
             return LLMResponse(content=f"Error: {e}", finish_reason="error")
 

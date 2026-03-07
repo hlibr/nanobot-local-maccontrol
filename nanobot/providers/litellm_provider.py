@@ -1,5 +1,6 @@
 """LiteLLM provider implementation for multi-provider support."""
 
+import asyncio
 import os
 import secrets
 import string
@@ -244,6 +245,8 @@ class LiteLLMProvider(LLMProvider):
         try:
             response = await acompletion(**kwargs)
             return self._parse_response(response)
+        except asyncio.CancelledError:
+            raise
         except Exception as e:
             # Return error as content for graceful handling
             return LLMResponse(

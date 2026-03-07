@@ -366,6 +366,10 @@ class AgentLoop:
         tools_used: list[str] = []
 
         while iteration < self.max_iterations:
+            # Check for task cancellation at the start of each iteration
+            if asyncio.current_task() and asyncio.current_task().cancelling():
+                raise asyncio.CancelledError()
+
             iteration += 1
 
             response = await self.provider.chat(
@@ -376,6 +380,10 @@ class AgentLoop:
                 max_tokens=self.max_tokens,
                 reasoning_effort=self.reasoning_effort,
             )
+
+            # Re-check after long LLM call
+            if asyncio.current_task() and asyncio.current_task().cancelling():
+                raise asyncio.CancelledError()
 
             if response.has_tool_calls:
                 if on_progress:
@@ -458,7 +466,8 @@ class AgentLoop:
             except asyncio.TimeoutError:
                 continue
 
-            if msg.content.strip().lower() == "/stop":
+            content = msg.content.strip().lower()
+            if content == "/stop" or content.startswith("/stop@"):
                 await self._handle_stop(msg)
             else:
                 task = asyncio.create_task(self._dispatch(msg))
@@ -472,14 +481,28 @@ class AgentLoop:
 
     async def _handle_stop(self, msg: InboundMessage) -> None:
         """Cancel all active tasks and subagents for the session."""
-        tasks = self._active_tasks.pop(msg.session_key, [])
-        cancelled = sum(1 for t in tasks if not t.done() and t.cancel())
+        session_key = msg.session_key
+        logger.info("Handling /stop command for session {}", session_key)
+        
+        # Pop and cancel main agent tasks
+        tasks = self._active_tasks.pop(session_key, [])
+        cancelled = 0
         for t in tasks:
+            if not t.done():
+                logger.info("Cancelling active task: {}", t)
+                t.cancel()
+                cancelled += 1
+                
+        # Pop and cancel subagent tasks
+        sub_cancelled = await self.subagents.cancel_by_session(session_key)
+        
+        # Wait for cancellations to complete
+        if tasks:
             try:
-                await t
-            except (asyncio.CancelledError, Exception):
-                pass
-        sub_cancelled = await self.subagents.cancel_by_session(msg.session_key)
+                await asyncio.wait(tasks, timeout=2.0)
+            except asyncio.TimeoutError:
+                logger.warning("Timed out waiting for tasks to cancel for {}", session_key)
+        
         total = cancelled + sub_cancelled
         content = f"⏹ Stopped {total} task(s)." if total else "No active task to stop."
         await self.bus.publish_outbound(
