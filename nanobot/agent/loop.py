@@ -604,11 +604,18 @@ class AgentLoop:
             return OutboundMessage(
                 channel=msg.channel, chat_id=msg.chat_id, content="New session started."
             )
+        if cmd == "/reset":
+            session.clear()
+            self.sessions.save(session)
+            self.sessions.invalidate(session.key)
+            return OutboundMessage(
+                channel=msg.channel, chat_id=msg.chat_id, content="Session cleared (no memory save)."
+            )
         if cmd == "/help":
             return OutboundMessage(
                 channel=msg.channel,
                 chat_id=msg.chat_id,
-                content="🐈 nanobot commands:\n/new — Start a new conversation\n/stop — Stop the current task\n/model — Switch LLM model\n/help — Show available commands",
+                content="🐈 nanobot commands:\n/new — Start a new conversation\n/reset — Clear session (no memory save)\n/stop — Stop the current task\n/model — Switch LLM model\n/help — Show available commands",
             )
         if cmd.startswith("/model"):
             parts = cmd.split()

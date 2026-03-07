@@ -108,10 +108,10 @@ class TelegramChannel(BaseChannel):
 
     name = "telegram"
 
-    # Commands registered with Telegram's command menu
     BOT_COMMANDS = [
         BotCommand("start", "Start the bot"),
         BotCommand("new", "Start a new conversation"),
+        BotCommand("reset", "Clear session (no memory save)"),
         BotCommand("model", "Switch LLM model"),
         BotCommand("stop", "Stop the current task"),
         BotCommand("help", "Show available commands"),
@@ -151,6 +151,7 @@ class TelegramChannel(BaseChannel):
         # Add command handlers
         self._app.add_handler(CommandHandler("start", self._on_start))
         self._app.add_handler(CommandHandler("new", self._forward_command))
+        self._app.add_handler(CommandHandler("reset", self._forward_command))
         self._app.add_handler(CommandHandler("model", self._forward_command))
         self._app.add_handler(CommandHandler("help", self._on_help))
 
@@ -330,7 +331,9 @@ class TelegramChannel(BaseChannel):
         await update.message.reply_text(
             "🐈 nanobot commands:\n"
             "/new — Start a new conversation\n"
+            "/reset — Clear session (no memory save)\n"
             "/stop — Stop the current task\n"
+            "/model — Switch LLM model\n"
             "/help — Show available commands"
         )
 
