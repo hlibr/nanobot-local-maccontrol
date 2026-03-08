@@ -25,44 +25,46 @@ def _markdown_to_telegram_html(text: str) -> str:
 
     # 1. Extract and protect code blocks (preserve content from other processing)
     code_blocks: list[str] = []
+
     def save_code_block(m: re.Match) -> str:
         code_blocks.append(m.group(1))
         return f"\x00CB{len(code_blocks) - 1}\x00"
 
-    text = re.sub(r'```[\w]*\n?([\s\S]*?)```', save_code_block, text)
+    text = re.sub(r"```[\w]*\n?([\s\S]*?)```", save_code_block, text)
 
     # 2. Extract and protect inline code
     inline_codes: list[str] = []
+
     def save_inline_code(m: re.Match) -> str:
         inline_codes.append(m.group(1))
         return f"\x00IC{len(inline_codes) - 1}\x00"
 
-    text = re.sub(r'`([^`]+)`', save_inline_code, text)
+    text = re.sub(r"`([^`]+)`", save_inline_code, text)
 
     # 3. Headers # Title -> just the title text
-    text = re.sub(r'^#{1,6}\s+(.+)$', r'\1', text, flags=re.MULTILINE)
+    text = re.sub(r"^#{1,6}\s+(.+)$", r"\1", text, flags=re.MULTILINE)
 
     # 4. Blockquotes > text -> just the text (before HTML escaping)
-    text = re.sub(r'^>\s*(.*)$', r'\1', text, flags=re.MULTILINE)
+    text = re.sub(r"^>\s*(.*)$", r"\1", text, flags=re.MULTILINE)
 
     # 5. Escape HTML special characters
     text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
     # 6. Links [text](url) - must be before bold/italic to handle nested cases
-    text = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'<a href="\2">\1</a>', text)
+    text = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r'<a href="\2">\1</a>', text)
 
     # 7. Bold **text** or __text__
-    text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)
-    text = re.sub(r'__(.+?)__', r'<b>\1</b>', text)
+    text = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", text)
+    text = re.sub(r"__(.+?)__", r"<b>\1</b>", text)
 
     # 8. Italic _text_ (avoid matching inside words like some_var_name)
-    text = re.sub(r'(?<![a-zA-Z0-9])_([^_]+)_(?![a-zA-Z0-9])', r'<i>\1</i>', text)
+    text = re.sub(r"(?<![a-zA-Z0-9])_([^_]+)_(?![a-zA-Z0-9])", r"<i>\1</i>", text)
 
     # 9. Strikethrough ~~text~~
-    text = re.sub(r'~~(.+?)~~', r'<s>\1</s>', text)
+    text = re.sub(r"~~(.+?)~~", r"<s>\1</s>", text)
 
     # 10. Bullet lists - item -> • item
-    text = re.sub(r'^[-*]\s+', '• ', text, flags=re.MULTILINE)
+    text = re.sub(r"^[-*]\s+", "• ", text, flags=re.MULTILINE)
 
     # 11. Restore inline code with HTML tags
     for i, code in enumerate(inline_codes):
@@ -89,9 +91,9 @@ def _split_message(content: str, max_len: int = 4000) -> list[str]:
             chunks.append(content)
             break
         cut = content[:max_len]
-        pos = cut.rfind('\n')
+        pos = cut.rfind("\n")
         if pos == -1:
-            pos = cut.rfind(' ')
+            pos = cut.rfind(" ")
         if pos == -1:
             pos = max_len
         chunks.append(content[:pos])
@@ -134,6 +136,7 @@ class TelegramChannel(BaseChannel):
 
         # Eagerly instantiate transcriber to allow preloading (if enabled)
         from nanobot.providers.transcription import get_transcription_provider
+
         self._transcriber = get_transcription_provider(self.transcription_config)
 
     async def start(self) -> None:
@@ -149,8 +152,12 @@ class TelegramChannel(BaseChannel):
             await self._transcriber.preload()
 
         # Build the application with larger connection pool to avoid pool-timeout on long runs
-        req = HTTPXRequest(connection_pool_size=16, pool_timeout=5.0, connect_timeout=30.0, read_timeout=30.0)
-        builder = Application.builder().token(self.config.token).request(req).get_updates_request(req)
+        req = HTTPXRequest(
+            connection_pool_size=16, pool_timeout=5.0, connect_timeout=30.0, read_timeout=30.0
+        )
+        builder = (
+            Application.builder().token(self.config.token).request(req).get_updates_request(req)
+        )
         if self.config.proxy:
             builder = builder.proxy(self.config.proxy).get_updates_proxy(self.config.proxy)
         self._app = builder.build()
@@ -167,9 +174,15 @@ class TelegramChannel(BaseChannel):
         # Add message handler for text, photos, voice, documents
         self._app.add_handler(
             MessageHandler(
-                (filters.TEXT | filters.PHOTO | filters.VOICE | filters.AUDIO | filters.Document.ALL)
+                (
+                    filters.TEXT
+                    | filters.PHOTO
+                    | filters.VOICE
+                    | filters.AUDIO
+                    | filters.Document.ALL
+                )
                 & ~filters.COMMAND,
-                self._on_message
+                self._on_message,
             )
         )
 
@@ -192,7 +205,7 @@ class TelegramChannel(BaseChannel):
         # Start polling (this runs until stopped)
         await self._app.updater.start_polling(
             allowed_updates=["message"],
-            drop_pending_updates=True  # Ignore old messages on startup
+            drop_pending_updates=True,  # Ignore old messages on startup
         )
 
         # Keep running until stopped
@@ -252,12 +265,11 @@ class TelegramChannel(BaseChannel):
             reply_to_message_id = msg.metadata.get("message_id")
             if reply_to_message_id:
                 reply_params = ReplyParameters(
-                    message_id=reply_to_message_id,
-                    allow_sending_without_reply=True
+                    message_id=reply_to_message_id, allow_sending_without_reply=True
                 )
 
         # Send media files
-        for media_path in (msg.media or []):
+        for media_path in msg.media or []:
             try:
                 media_type = self._get_media_type(media_path)
                 sender = {
@@ -265,27 +277,37 @@ class TelegramChannel(BaseChannel):
                     "voice": self._app.bot.send_voice,
                     "audio": self._app.bot.send_audio,
                 }.get(media_type, self._app.bot.send_document)
-                
-                param = "photo" if media_type == "photo" else media_type if media_type in ("voice", "audio") else "document"
-                
+
+                param = (
+                    "photo"
+                    if media_type == "photo"
+                    else media_type
+                    if media_type in ("voice", "audio")
+                    else "document"
+                )
+
                 if media_path.startswith("http://") or media_path.startswith("https://"):
                     # Send directly by URL
                     await sender(
                         chat_id=chat_id,
                         **{param: media_path},
-                        caption=msg.content if msg.content and msg.content != "[empty message]" else None,
-                        reply_parameters=reply_params
+                        caption=msg.content
+                        if msg.content and msg.content != "[empty message]"
+                        else None,
+                        reply_parameters=reply_params,
                     )
                     # If we sent the caption with the image, clear it so it doesn't send again as text
                     msg.content = "[empty message]"
                 else:
                     # Send local file
-                    with open(media_path, 'rb') as f:
+                    with open(media_path, "rb") as f:
                         await sender(
                             chat_id=chat_id,
                             **{param: f},
-                            caption=msg.content if msg.content and msg.content != "[empty message]" else None,
-                            reply_parameters=reply_params
+                            caption=msg.content
+                            if msg.content and msg.content != "[empty message]"
+                            else None,
+                            reply_parameters=reply_params,
                         )
                     msg.content = "[empty message]"
             except Exception as e:
@@ -294,45 +316,38 @@ class TelegramChannel(BaseChannel):
                 await self._app.bot.send_message(
                     chat_id=chat_id,
                     text=f"[Failed to send: {filename}]",
-                    reply_parameters=reply_params
+                    reply_parameters=reply_params,
                 )
 
         # Send text content
         if msg.content and msg.content != "[empty message]":
             is_progress = msg.metadata.get("_progress", False)
             draft_id = msg.metadata.get("message_id")
-            
+
             for chunk in _split_message(msg.content):
                 try:
                     html = _markdown_to_telegram_html(chunk)
                     if is_progress and draft_id:
                         await self._app.bot.send_message_draft(
-                            chat_id=chat_id,
-                            draft_id=draft_id,
-                            text=html,
-                            parse_mode="HTML"
+                            chat_id=chat_id, draft_id=draft_id, text=html, parse_mode="HTML"
                         )
                     else:
                         await self._app.bot.send_message(
                             chat_id=chat_id,
                             text=html,
                             parse_mode="HTML",
-                            reply_parameters=reply_params
+                            reply_parameters=reply_params,
                         )
                 except Exception as e:
                     logger.warning("HTML parse failed, falling back to plain text: {}", e)
                     try:
                         if is_progress and draft_id:
                             await self._app.bot.send_message_draft(
-                                chat_id=chat_id,
-                                draft_id=draft_id,
-                                text=chunk
+                                chat_id=chat_id, draft_id=draft_id, text=chunk
                             )
                         else:
                             await self._app.bot.send_message(
-                                chat_id=chat_id,
-                                text=chunk,
-                                reply_parameters=reply_params
+                                chat_id=chat_id, text=chunk, reply_parameters=reply_params
                             )
                     except Exception as e2:
                         logger.error("Error sending Telegram message: {}", e2)
@@ -422,24 +437,30 @@ class TelegramChannel(BaseChannel):
         if media_file and self._app:
             try:
                 file = await self._app.bot.get_file(media_file.file_id)
-                ext = self._get_extension(media_type, getattr(media_file, 'mime_type', None))
+                ext = self._get_extension(media_type, getattr(media_file, "mime_type", None))
 
-                # Save to workspace/media/
+                # Save to workspace/media/ with unique filename
                 from pathlib import Path
+                import time
+
                 media_dir = Path.home() / ".nanobot" / "media"
                 media_dir.mkdir(parents=True, exist_ok=True)
 
-                file_path = media_dir / f"{media_file.file_id[:16]}{ext}"
+                # Use timestamp to ensure unique filenames (same image sent twice = different files)
+                timestamp = int(time.time() * 1000)  # milliseconds for uniqueness
+                file_path = media_dir / f"{media_file.file_id[:16]}_{timestamp}{ext}"
                 await file.download_to_drive(str(file_path))
 
                 media_paths.append(str(file_path))
+
+                logger.debug("Image saved to: {}", file_path)
 
                 # Handle voice transcription
                 if media_type == "voice" or media_type == "audio":
                     transcription = None
                     if self._transcriber:
                         transcription = await self._transcriber.transcribe(file_path)
-                        
+
                     if transcription:
                         logger.info("Transcribed {}: {}...", media_type, transcription[:50])
                         content_parts.append(f"[transcription: {transcription}]")
@@ -464,11 +485,15 @@ class TelegramChannel(BaseChannel):
             key = f"{str_chat_id}:{media_group_id}"
             if key not in self._media_group_buffers:
                 self._media_group_buffers[key] = {
-                    "sender_id": sender_id, "chat_id": str_chat_id,
-                    "contents": [], "media": [],
+                    "sender_id": sender_id,
+                    "chat_id": str_chat_id,
+                    "contents": [],
+                    "media": [],
                     "metadata": {
-                        "message_id": message.message_id, "user_id": user.id,
-                        "username": user.username, "first_name": user.first_name,
+                        "message_id": message.message_id,
+                        "user_id": user.id,
+                        "username": user.username,
+                        "first_name": user.first_name,
                         "is_group": message.chat.type != "private",
                     },
                 }
@@ -495,8 +520,8 @@ class TelegramChannel(BaseChannel):
                 "user_id": user.id,
                 "username": user.username,
                 "first_name": user.first_name,
-                "is_group": message.chat.type != "private"
-            }
+                "is_group": message.chat.type != "private",
+            },
         )
 
     async def _flush_media_group(self, key: str) -> None:
@@ -507,8 +532,10 @@ class TelegramChannel(BaseChannel):
                 return
             content = "\n".join(buf["contents"]) or "[empty message]"
             await self._handle_message(
-                sender_id=buf["sender_id"], chat_id=buf["chat_id"],
-                content=content, media=list(dict.fromkeys(buf["media"])),
+                sender_id=buf["sender_id"],
+                chat_id=buf["chat_id"],
+                content=content,
+                media=list(dict.fromkeys(buf["media"])),
                 metadata=buf["metadata"],
             )
         finally:
@@ -545,8 +572,12 @@ class TelegramChannel(BaseChannel):
         """Get file extension based on media type."""
         if mime_type:
             ext_map = {
-                "image/jpeg": ".jpg", "image/png": ".png", "image/gif": ".gif",
-                "audio/ogg": ".ogg", "audio/mpeg": ".mp3", "audio/mp4": ".m4a",
+                "image/jpeg": ".jpg",
+                "image/png": ".png",
+                "image/gif": ".gif",
+                "audio/ogg": ".ogg",
+                "audio/mpeg": ".mp3",
+                "audio/mp4": ".m4a",
             }
             if mime_type in ext_map:
                 return ext_map[mime_type]

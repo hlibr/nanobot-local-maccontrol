@@ -67,8 +67,11 @@ class ContextBuilder:
         extracted_media = re.findall(r"\[image:\s*(.+?)\]", current_message)
         clean_message = current_message
         if extracted_media:
-            media = (media or []) + [m.strip() for m in extracted_media]
-            clean_message = re.sub(r"\[image:\s*.+?\]", "", current_message).strip()
+            # Combine media lists and deduplicate
+            all_media = list(dict.fromkeys((media or []) + [m.strip() for m in extracted_media]))
+            media = all_media
+            # DON'T strip markers - we need them for hydration later!
+            # clean_message = re.sub(r"\[image:\s*.+?\]", "", current_message).strip()
 
         user_content = await self._build_user_content(
             clean_message, media, vision_supported=vision_supported
@@ -130,6 +133,9 @@ class ContextBuilder:
         self, text: str, media: list[str] | None, vision_supported: bool = True
     ) -> str | list[dict[str, Any]]:
         """Build user message content with base64-encoded images. URLs are fetched and converted."""
+        from loguru import logger
+
+        logger.debug("_build_user_content: text='{}'..., media={}", text[:50], media)
         if not media:
             return text
 
@@ -210,15 +216,12 @@ class ContextBuilder:
         if not images:
             return text
 
-        # Preserve [image: path] markers in text for later hydration
-        # This allows _save_turn() to extract paths and save them for history
-        if media:
-            markers = " ".join(f"[image: {p}]" for p in media)
-            text_with_markers = f"{markers}\n{text}" if text else markers
-        else:
-            text_with_markers = text
+        # Don't add markers - they're already in the text from the channel (e.g., Telegram)
+        # We just need to return the images for base64 conversion
+        from loguru import logger
 
-        return images + [{"type": "text", "text": text_with_markers}]
+        logger.debug("Returning {} image blocks + text", len(images))
+        return images + [{"type": "text", "text": text}]
 
     async def _hydrate_image_refs(
         self, history: list[dict[str, Any]], vision_supported: bool = True
@@ -303,14 +306,32 @@ class ContextBuilder:
                 result.append(msg)
                 continue
 
+            logger.debug("Processing {} blocks in this message", len(content))
+            for i, block in enumerate(content):
+                btype = block.get("type")
+                if btype == "text":
+                    text = block.get("text", "")[:200]
+                    logger.debug(
+                        "Block[{}]: type=text, content='{}'...", i, text.replace("\n", "\\n")
+                    )
+                elif btype == "image_url":
+                    url = block.get("image_url", {}).get("url", "")[:50]
+                    logger.debug("Block[{}]: type=image_url, url='{}'...", i, url)
+                else:
+                    logger.debug("Block[{}]: type={}", i, btype)
+
+            images_hydrated = 0
             new_content = []
             changed = False
-            for block in content:
+            for i, block in enumerate(content):
                 if block.get("type") == "text":
                     text = block.get("text", "")
                     m = _REF_PATTERN.search(text)
                     if m:
                         img_path = m.group(1)
+                        logger.debug(
+                            "Found [image:...] in block[{}]: {}", i, img_path.split("/")[-1]
+                        )
                         img_url = None
 
                         if not vision_supported:
@@ -356,6 +377,10 @@ class ContextBuilder:
                             if p.is_file() and mime and mime.startswith("image/"):
                                 b64 = base64.b64encode(p.read_bytes()).decode()
                                 img_url = f"data:{mime};base64,{b64}"
+                                logger.debug(
+                                    "Hydrated: {} ({} bytes)", img_path.split("/")[-1], len(b64)
+                                )
+                                images_hydrated += 1
                             else:
                                 logger.warning("Image not found or invalid MIME: {}", img_path)
                                 continue
@@ -371,6 +396,9 @@ class ContextBuilder:
                 elif block.get("type") == "image_url":
                     pass
                 new_content.append(block)
+
+            if images_hydrated > 0:
+                logger.debug("Hydrated {} image(s) in this message", images_hydrated)
 
             if changed:
                 result.append({**msg, "content": new_content})

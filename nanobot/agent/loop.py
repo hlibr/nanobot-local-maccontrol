@@ -832,15 +832,19 @@ class AgentLoop:
                         continue
                 if isinstance(content, list):
                     filtered = []
-                    # Extract all image paths from text blocks in this turn
+                    # Extract image paths from the media list passed with the message
+                    # These are the actual file paths, not markers in text
                     turn_paths = []
                     for tc in content:
                         if tc.get("type") == "text":
                             import re
 
-                            matches = re.findall(r"\[image:\s*(.+?)\]", tc.get("text", ""))
+                            text_content = tc.get("text", "")
+                            logger.debug("Extracting from text: '{}'...[:200]", text_content[:200])
+                            matches = re.findall(r"\[image:\s*(.+?)\]", text_content)
                             turn_paths.extend(matches)
 
+                    logger.debug("Extracted {} image paths: {}", len(turn_paths), turn_paths)
                     img_idx = 0
                     for c in content:
                         if (
@@ -861,6 +865,21 @@ class AgentLoop:
                                 filtered.append({"type": "text", "text": f"[image: {img_path}]"})
                             else:
                                 filtered.append({"type": "text", "text": "[image]"})
+                        elif c.get("type") == "text":
+                            # Strip [image: path] markers from text - they'll be saved as separate blocks
+                            import re
+
+                            original_text = c.get("text", "")
+                            cleaned_text = re.sub(
+                                r"\[image:\s*.+?\]\s*\n?", "", original_text
+                            ).strip()
+                            logger.debug(
+                                "Strip test: original='{}' → cleaned='{}'",
+                                original_text[:100],
+                                cleaned_text[:100],
+                            )
+                            if cleaned_text:
+                                filtered.append({"type": "text", "text": cleaned_text})
                         else:
                             filtered.append(c)
                     if not filtered:
