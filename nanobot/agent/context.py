@@ -245,7 +245,6 @@ class ContextBuilder:
             # Handle string content (e.g., from Telegram)
             if isinstance(content, str):
                 matches = _REF_PATTERN.findall(content)
-                logger.debug("String content: found {} [image:...] tags", len(matches))
                 if not matches:
                     result.append(msg)
                     continue
@@ -263,22 +262,18 @@ class ContextBuilder:
                 for match in _REF_PATTERN.finditer(content):
                     img_path = match.group(1)
                     img_url = None
-                    logger.debug("Hydrating image: {}", img_path)
 
                     if img_path.startswith("http://") or img_path.startswith("https://"):
                         fetch_result = await self._fetch_image_as_b64(img_path)
                         if isinstance(fetch_result, tuple):
                             mime, b64 = fetch_result
                             img_url = f"data:{mime};base64,{b64}"
-                            logger.debug("URL image hydrated: {} bytes", len(b64))
                     else:
                         p = Path(unquote(img_path))
                         mime, _ = mimetypes.guess_type(img_path)
-                        logger.debug("Local path: exists={}, mime={}", p.is_file(), mime)
                         if p.is_file() and mime and mime.startswith("image/"):
                             b64 = base64.b64encode(p.read_bytes()).decode()
                             img_url = f"data:{mime};base64,{b64}"
-                            logger.debug("Local image hydrated: {} bytes", len(b64))
                         else:
                             logger.warning("Image not found or invalid MIME: {}", img_path)
 
@@ -297,7 +292,6 @@ class ContextBuilder:
                         hydrated_parts.append({"type": "text", "text": remaining})
 
                 if images_added:
-                    logger.debug("Hydration successful: {} images added", len(images_added))
                     result.append({**msg, "content": hydrated_parts + images_added})
                 else:
                     logger.warning("Hydration failed: no images could be loaded")
@@ -309,34 +303,26 @@ class ContextBuilder:
                 result.append(msg)
                 continue
 
-            logger.debug("List content: processing {} blocks", len(content))
             new_content = []
             changed = False
-            for i, block in enumerate(content):
-                logger.debug("Block[{}]: type={}", i, block.get("type"))
+            for block in content:
                 if block.get("type") == "text":
                     text = block.get("text", "")
-                    logger.debug("Text block content: '{}'...[:100]", text[:100])
                     m = _REF_PATTERN.search(text)
                     if m:
                         img_path = m.group(1)
-                        logger.debug("Found [image:...] marker in text block: {}", img_path)
                         img_url = None
 
                         if not vision_supported:
-                            logger.warning("Vision not supported, skipping hydration")
                             new_content.append({"type": "text", "text": f"[Image: {img_path}]"})
                             changed = True
                             continue
-
-                        logger.debug("Hydrating image from marker: {}", img_path)
 
                         if img_path.startswith("http://") or img_path.startswith("https://"):
                             fetch_result = await self._fetch_image_as_b64(img_path)
                             if isinstance(fetch_result, tuple):
                                 mime, b64 = fetch_result
                                 img_url = f"data:{mime};base64,{b64}"
-                                logger.debug("URL image hydrated: {} bytes", len(b64))
                             elif fetch_result == "invalid_type":
                                 new_content.append(
                                     {
@@ -367,11 +353,9 @@ class ContextBuilder:
                         else:
                             p = Path(unquote(img_path))
                             mime, _ = mimetypes.guess_type(img_path)
-                            logger.debug("Local path: exists={}, mime={}", p.is_file(), mime)
                             if p.is_file() and mime and mime.startswith("image/"):
                                 b64 = base64.b64encode(p.read_bytes()).decode()
                                 img_url = f"data:{mime};base64,{b64}"
-                                logger.debug("Local image hydrated: {} bytes", len(b64))
                             else:
                                 logger.warning("Image not found or invalid MIME: {}", img_path)
                                 continue
@@ -385,13 +369,7 @@ class ContextBuilder:
                             changed = True
                             continue
                 elif block.get("type") == "image_url":
-                    img_data = block.get("image_url", {}).get("url", "")
-                    if img_data.startswith("data:image/"):
-                        logger.debug("Block[{}]: Already hydrated ({} bytes)", i, len(img_data))
-                    else:
-                        logger.debug(
-                            "Block[{}]: image_url but not base64: '{}'"[:50], i, img_data[:50]
-                        )
+                    pass
                 new_content.append(block)
 
             if changed:
