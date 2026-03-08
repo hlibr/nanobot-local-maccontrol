@@ -834,12 +834,24 @@ class AgentLoop:
                     filtered = []
                     # Extract all image paths from text blocks in this turn
                     turn_paths = []
+                    from loguru import logger
+
+                    logger.debug(
+                        "Saving turn: extracting image paths from {} content blocks", len(content)
+                    )
                     for tc in content:
                         if tc.get("type") == "text":
                             import re
 
-                            matches = re.findall(r"\[image:\s*(.+?)\]", tc.get("text", ""))
+                            text_content = tc.get("text", "")
+                            matches = re.findall(r"\[image:\s*(.+?)\]", text_content)
+                            logger.debug(
+                                "Text block: '{}'...[:100], found {} paths",
+                                text_content[:100],
+                                len(matches),
+                            )
                             turn_paths.extend(matches)
+                    logger.debug("Extracted {} image paths: {}", len(turn_paths), turn_paths)
 
                     img_idx = 0
                     for c in content:
