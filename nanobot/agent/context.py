@@ -31,8 +31,7 @@ class ContextBuilder:
         lines = [f"Current Time: {now} ({tz})"]
         if channel and chat_id:
             lines += [f"Channel: {channel}", f"Chat ID: {chat_id}"]
-        # return ContextBuilder._RUNTIME_CONTEXT_TAG + "\n" + "\n".join(lines)
-        return "\n".join(lines)
+        return ContextBuilder._RUNTIME_CONTEXT_TAG + "\n" + "\n".join(lines)
 
     async def build_messages(
         self,
@@ -46,8 +45,6 @@ class ContextBuilder:
     ) -> list[dict[str, Any]]:
         """Build the complete message list for an LLM call."""
         # from loguru import logger
-
-        runtime_ctx = self._build_runtime_context(channel, chat_id)
 
         logger.debug(
             "Building messages: history has {} messages, vision_supported={}",
@@ -80,11 +77,6 @@ class ContextBuilder:
             clean_message, media, vision_supported=vision_supported
         )
 
-        if isinstance(user_content, str):
-            merged = f"{runtime_ctx}\n\n{user_content}"
-        else:
-            merged = [{"type": "text", "text": runtime_ctx}] + user_content
-
         hydrated_history = await self._hydrate_image_refs(
             history, vision_supported=vision_supported
         )
@@ -94,7 +86,7 @@ class ContextBuilder:
         return [
             {"role": "system", "content": self.build_system_prompt(skill_names)},
             *hydrated_history,
-            {"role": "user", "content": merged},
+            {"role": "user", "content": user_content},
         ]
 
     async def _fetch_image_as_b64(self, url: str) -> tuple[str, str] | None:
