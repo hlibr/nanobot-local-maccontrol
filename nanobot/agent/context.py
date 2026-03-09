@@ -6,6 +6,8 @@ import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+import re
+from loguru import logger
 
 
 class ContextBuilder:
@@ -42,7 +44,7 @@ class ContextBuilder:
         vision_supported: bool = True,
     ) -> list[dict[str, Any]]:
         """Build the complete message list for an LLM call."""
-        from loguru import logger
+        # from loguru import logger
 
         runtime_ctx = self._build_runtime_context(channel, chat_id)
 
@@ -62,7 +64,7 @@ class ContextBuilder:
                 )
 
         # Extract [image: path] tags from the message text and add to media list
-        import re
+        # import re
 
         extracted_media = re.findall(r"\[image:\s*(.+?)\]", current_message)
         clean_message = current_message
@@ -97,7 +99,7 @@ class ContextBuilder:
     async def _fetch_image_as_b64(self, url: str) -> tuple[str, str] | None:
         """Fetch image from URL and return (mime, b64_data). Follows redirects, handles errors."""
         import httpx
-        from loguru import logger
+        # from loguru import logger
 
         try:
             async with httpx.AsyncClient(follow_redirects=True, timeout=10.0) as client:
@@ -133,7 +135,7 @@ class ContextBuilder:
         self, text: str, media: list[str] | None, vision_supported: bool = True
     ) -> str | list[dict[str, Any]]:
         """Build user message content with base64-encoded images. URLs are fetched and converted."""
-        from loguru import logger
+        # from loguru import logger
 
         logger.debug("_build_user_content: text='{}'..., media={}", text[:50], media)
         if not media:
@@ -218,7 +220,7 @@ class ContextBuilder:
 
         # Don't add markers - they're already in the text from the channel (e.g., Telegram)
         # We just need to return the images for base64 conversion
-        from loguru import logger
+        # from loguru import logger
 
         logger.debug("Returning {} image blocks + text", len(images))
         return images + [{"type": "text", "text": text}]
@@ -227,10 +229,10 @@ class ContextBuilder:
         self, history: list[dict[str, Any]], vision_supported: bool = True
     ) -> list[dict[str, Any]]:
         """Re-inject base64 image data for [image:path] markers in history."""
-        import re
+        # import re
         from urllib.parse import unquote
 
-        from loguru import logger
+        # from loguru import logger
 
         _REF_PATTERN = re.compile(r"\[image:\s*(.+?)\]")
 

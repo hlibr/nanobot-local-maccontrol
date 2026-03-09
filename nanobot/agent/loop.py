@@ -837,7 +837,7 @@ class AgentLoop:
                     turn_paths = []
                     for tc in content:
                         if tc.get("type") == "text":
-                            import re
+                            # import re
 
                             text_content = tc.get("text", "")
                             logger.debug("Extracting from text: '{}'...[:200]", text_content[:200])
@@ -867,7 +867,7 @@ class AgentLoop:
                                 filtered.append({"type": "text", "text": "[image]"})
                         elif c.get("type") == "text":
                             # Strip [image: path] markers from text - they'll be saved as separate blocks
-                            import re
+                            # import re
 
                             original_text = c.get("text", "")
                             cleaned_text = re.sub(
