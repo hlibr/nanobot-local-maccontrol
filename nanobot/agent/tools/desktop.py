@@ -61,8 +61,9 @@ class CaptureScreenTool(Tool):
     """Tool to capture the current screen."""
 
     def __init__(self, media_dir: Path | None = None):
-        self.media_dir = media_dir or Path.home() / ".nanobot" / "media"
-        self.media_dir.mkdir(parents=True, exist_ok=True)
+        self.media_dir = media_dir
+        if self.media_dir:
+            self.media_dir.mkdir(parents=True, exist_ok=True)
 
     @property
     def name(self) -> str:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+from pathlib import Path
 
 from loguru import logger
 from telegram import BotCommand, ReplyParameters, Update
@@ -124,10 +125,12 @@ class TelegramChannel(BaseChannel):
         config: TelegramConfig,
         bus: MessageBus,
         transcription_config: TranscriptionConfig | None = None,
+        workspace: Path | None = None,
     ):
         super().__init__(config, bus)
         self.config: TelegramConfig = config
         self.transcription_config = transcription_config
+        self.workspace = workspace
         self._app: Application | None = None
         self._chat_ids: dict[str, int] = {}  # Map sender_id to chat_id for replies
         self._typing_tasks: dict[str, asyncio.Task] = {}  # chat_id -> typing loop task
@@ -443,7 +446,11 @@ class TelegramChannel(BaseChannel):
                 from pathlib import Path
                 import time
 
-                media_dir = Path.home() / ".nanobot" / "media"
+                media_dir = (
+                    (self.workspace / "media")
+                    if self.workspace
+                    else Path.home() / ".nanobot" / "media"
+                )
                 media_dir.mkdir(parents=True, exist_ok=True)
 
                 # Use timestamp to ensure unique filenames (same image sent twice = different files)
