@@ -223,6 +223,14 @@ def _make_provider(config: Config):
             default_model=model,
         )
 
+    # Ollama: uses OpenAI-compatible API (bypasses LiteLLM's native ollama provider)
+    if provider_name == "ollama":
+        return CustomProvider(
+            api_key=p.api_key if p else "ollama",
+            api_base=config.get_api_base(model) or "https://ollama.com/v1",
+            default_model=model,
+        )
+
     from nanobot.providers.registry import find_by_name
 
     spec = find_by_name(provider_name)

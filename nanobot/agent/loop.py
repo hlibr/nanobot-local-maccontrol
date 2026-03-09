@@ -158,6 +158,14 @@ def _make_provider_for_model(model: str, config=None):
             default_model=model,
         )
 
+    # Ollama: uses OpenAI-compatible API (bypasses LiteLLM's native ollama provider)
+    if provider_name == "ollama":
+        return CustomProvider(
+            api_key=p.api_key if p else "ollama",
+            api_base=cfg.get_api_base(model) or "https://ollama.com/v1",
+            default_model=model,
+        )
+
     spec = find_by_name(provider_name)
     if not model.startswith("bedrock/") and not (p and p.api_key) and not (spec and spec.is_oauth):
         raise RuntimeError(f"No API key configured for provider '{provider_name}'.")

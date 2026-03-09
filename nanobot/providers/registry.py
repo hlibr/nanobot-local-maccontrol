@@ -356,6 +356,26 @@ PROVIDERS: tuple[ProviderSpec, ...] = (
         strip_model_prefix=False,
         model_overrides=(),
     ),
+    # Ollama: Uses OpenAI-compatible API (not LiteLLM's native ollama provider).
+    # This allows using ollama.com cloud or any Ollama instance with OpenAI-compatible API.
+    # is_direct=True bypasses LiteLLM and uses CustomProvider directly.
+    ProviderSpec(
+        name="ollama",
+        keywords=("ollama",),
+        env_key="OLLAMA_API_KEY",
+        display_name="Ollama",
+        litellm_prefix="",  # No prefix needed for CustomProvider
+        skip_prefixes=("ollama/",),
+        env_extras=(),
+        is_gateway=False,
+        is_local=True,  # enables vision auto-detection
+        detect_by_key_prefix="",
+        detect_by_base_keyword="",
+        default_api_base="https://ollama.com/v1",
+        strip_model_prefix=True,  # ollama/qwen3.5 → qwen3.5
+        is_direct=True,  # Use CustomProvider (OpenAI-compatible API)
+        model_overrides=(),
+    ),
     # === Auxiliary (not a primary LLM provider) ============================
     # Groq: mainly used for Whisper voice transcription, also usable for LLM.
     # Needs "groq/" prefix for LiteLLM routing. Placed last — it rarely wins fallback.

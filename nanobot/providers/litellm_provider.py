@@ -129,6 +129,9 @@ class LiteLLMProvider(LLMProvider):
         spec = find_by_model(model)
         if spec and spec.litellm_prefix:
             model = self._canonicalize_explicit_prefix(model, spec.name, spec.litellm_prefix)
+            # Strip model prefix for providers like Ollama that expect bare model names
+            if spec.strip_model_prefix and "/" in model:
+                model = model.split("/")[-1]
             if not any(model.startswith(s) for s in spec.skip_prefixes):
                 model = f"{spec.litellm_prefix}/{model}"
 
