@@ -75,6 +75,14 @@ class LiteLLMProvider(LLMProvider):
         if m in self._vision_cache:
             return self._vision_cache[m]
 
+        # Check provider registry for model-specific vision support
+        spec = find_by_model(m)
+        if spec and spec.supports_vision_models:
+            model_lower = m.lower()
+            if any(vision_model in model_lower for vision_model in spec.supports_vision_models):
+                self._vision_cache[m] = True
+                return True
+
         try:
             res = litellm.supports_vision(m)
             self._vision_cache[m] = res
