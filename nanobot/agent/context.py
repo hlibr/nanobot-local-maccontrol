@@ -136,19 +136,12 @@ class ContextBuilder:
 
         if not vision_supported:
             import os
-            import re
-
-            # Strip [image: path] markers from text to avoid duplicates
-            clean_text = re.sub(r"\[image:\s*.+?\]\s*\n?", "", text).strip()
 
             placeholders = []
             for path in media:
                 name = path.split("/")[-1] if "/" in path else path
                 placeholders.append(f"[Image: {name}]")
-
-            if placeholders:
-                return clean_text + "\n" + "\n".join(placeholders)
-            return clean_text
+            return text + "\n" + "\n".join(placeholders)
 
         images = []
         for path in media:
