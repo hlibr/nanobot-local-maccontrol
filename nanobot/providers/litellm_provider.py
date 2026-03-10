@@ -66,9 +66,15 @@ class LiteLLMProvider(LLMProvider):
         self._vision_cache: dict[str, bool] = {}
 
     def supports_vision(self, model: str | None = None) -> bool:
-        """Check if model supports images using LiteLLM's detection."""
+        """Check if model supports images using LiteLLM's detection.
+
+        Defaults to True - assumes vision is supported unless explicitly known otherwise.
+        This is the safe default: non-vision models will gracefully reject images,
+        but vision models won't be incorrectly blocked.
+        """
         m = self._resolve_model(model or self.default_model)
 
+        # Gateway/local deployment - always support vision
         if self._gateway and self._gateway.is_local:
             return True
 
@@ -82,12 +88,18 @@ class LiteLLMProvider(LLMProvider):
             if any(vision_model in model_lower for vision_model in spec.supports_vision_models):
                 self._vision_cache[m] = True
                 return True
+            # If model doesn't match vision patterns but provider has explicit list,
+            # cache as False (provider knows which models support vision)
+            if spec.supports_vision_models:
+                self._vision_cache[m] = False
+                return False
 
         try:
             res = litellm.supports_vision(m)
             self._vision_cache[m] = res
             return res
         except Exception:
+            # Default to True - assume vision is supported unless proven otherwise
             return True
 
     def _setup_env(self, api_key: str, api_base: str | None, model: str) -> None:

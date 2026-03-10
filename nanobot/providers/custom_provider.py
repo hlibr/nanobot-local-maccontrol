@@ -31,8 +31,12 @@ class CustomProvider(LLMProvider):
         self._vision_failed = False
 
     def supports_vision(self, model: str | None = None) -> bool:
-        """Assume support unless we've seen a vision-related error."""
-        return not self._vision_failed
+        """Assume vision is supported by default.
+
+        This is the safe default: non-vision models will gracefully reject images,
+        but vision models won't be incorrectly blocked.
+        """
+        return True
 
     def _resolve_model(self, model: str) -> str:
         """Strip provider prefix if present (e.g. custom/model -> model)."""

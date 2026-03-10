@@ -86,6 +86,7 @@ PROVIDERS: tuple[ProviderSpec, ...] = (
     # === Gateways (detected by api_key / api_base, not model name) =========
     # Gateways can route any model, so they win in fallback.
     # OpenRouter: global gateway, keys start with "sk-or-"
+    # is_local=True enables vision support by default (gateway to many vision-capable models)
     ProviderSpec(
         name="openrouter",
         keywords=("openrouter",),
@@ -95,7 +96,7 @@ PROVIDERS: tuple[ProviderSpec, ...] = (
         skip_prefixes=(),
         env_extras=(),
         is_gateway=True,
-        is_local=False,
+        is_local=True,  # Enable vision by default for gateway
         detect_by_key_prefix="sk-or-",
         detect_by_base_keyword="openrouter",
         default_api_base="https://openrouter.ai/api/v1",
@@ -106,6 +107,7 @@ PROVIDERS: tuple[ProviderSpec, ...] = (
     # AiHubMix: global gateway, OpenAI-compatible interface.
     # strip_model_prefix=True: it doesn't understand "anthropic/claude-3",
     # so we strip to bare "claude-3" then re-prefix as "openai/claude-3".
+    # is_local=True enables vision support by default (gateway to many models)
     ProviderSpec(
         name="aihubmix",
         keywords=("aihubmix",),
@@ -115,7 +117,7 @@ PROVIDERS: tuple[ProviderSpec, ...] = (
         skip_prefixes=(),
         env_extras=(),
         is_gateway=True,
-        is_local=False,
+        is_local=True,  # Enable vision by default for gateway
         detect_by_key_prefix="",
         detect_by_base_keyword="aihubmix",
         default_api_base="https://aihubmix.com/v1",
@@ -123,6 +125,7 @@ PROVIDERS: tuple[ProviderSpec, ...] = (
         model_overrides=(),
     ),
     # SiliconFlow (硅基流动): OpenAI-compatible gateway, model names keep org prefix
+    # is_local=True enables vision support by default (gateway to many vision models)
     ProviderSpec(
         name="siliconflow",
         keywords=("siliconflow",),
@@ -132,7 +135,7 @@ PROVIDERS: tuple[ProviderSpec, ...] = (
         skip_prefixes=(),
         env_extras=(),
         is_gateway=True,
-        is_local=False,
+        is_local=True,  # Enable vision by default for gateway
         detect_by_key_prefix="",
         detect_by_base_keyword="siliconflow",
         default_api_base="https://api.siliconflow.cn/v1",
@@ -140,6 +143,7 @@ PROVIDERS: tuple[ProviderSpec, ...] = (
         model_overrides=(),
     ),
     # VolcEngine (火山引擎): OpenAI-compatible gateway
+    # is_local=True enables vision support by default (gateway to many models)
     ProviderSpec(
         name="volcengine",
         keywords=("volcengine", "volces", "ark"),
@@ -149,7 +153,7 @@ PROVIDERS: tuple[ProviderSpec, ...] = (
         skip_prefixes=(),
         env_extras=(),
         is_gateway=True,
-        is_local=False,
+        is_local=True,  # Enable vision by default for gateway
         detect_by_key_prefix="",
         detect_by_base_keyword="volces",
         default_api_base="https://ark.cn-beijing.volces.com/api/v3",
